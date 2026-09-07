@@ -1,0 +1,3 @@
+import type { Machine, VenueMachine } from "../../types/machine";
+import { getEffectiveMachineDimensions } from "../../lib/floor-plan/machineDimensions";
+export function MachineCard({ venueMachine, machine }: { venueMachine: VenueMachine; machine: Machine }) { const { widthMm, depthMm } = getEffectiveMachineDimensions(machine, venueMachine); const dimensions = machine.heightMm ? `${widthMm} × ${depthMm} × ${machine.heightMm} mm` : `${widthMm} × ${depthMm} mm`; return <article className="machine-card">{machine.imageUrl ? <img src={machine.imageUrl} alt="" /> : <span className="machine-image-fallback" aria-label="No machine image">No image</span>}<div><b>{venueMachine.machineCode}</b><strong>{machine.name}</strong><span>{dimensions}</span></div></article>; }
