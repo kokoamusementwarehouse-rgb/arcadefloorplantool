@@ -12,7 +12,11 @@ export async function loadCloudGlobal() {
     client.from("venues").select("id,name"), client.from("catalog_machines").select("*"), client.from("venue_machines").select("*"), client.from("transfer_buffers").select("*"), client.from("transfer_buffer_items").select("*")
   ]);
   const error = [venues, catalog, units, buffers, items].find((result) => result.error)?.error; if (error) throw error;
-  if (!venues.data?.length && !catalog.data?.length && !units.data?.length && !buffers.data?.length && !items.data?.length) return null;
+  // The bootstrap migration creates one empty Global staging buffer. Treat that
+  // row as an empty cloud workspace so it cannot overwrite a populated local
+  // IndexedDB workspace during first-load migration.
+  const meaningfulBuffers = (buffers.data ?? []).filter((buffer) => buffer.name !== "Global staging" || (items.data ?? []).some((item) => item.transfer_buffer_id === buffer.id));
+  if (!venues.data?.length && !catalog.data?.length && !units.data?.length && !meaningfulBuffers.length && !items.data?.length) return null;
   return {
     projects: (venues.data ?? []) as Venue[],
     machines: (catalog.data ?? []).map((m) => ({ id: m.id, name: m.name, category: m.category, imageUrl: m.image_url, widthMm: Number(m.width_mm), depthMm: Number(m.depth_mm), heightMm: m.height_mm == null ? undefined : Number(m.height_mm), model: m.model ?? undefined, notes: m.notes ?? undefined, footprintColor: m.footprint_color ?? undefined, footprintTextColor: m.footprint_text_color ?? undefined, createdAt: iso(m.created_at), updatedAt: iso(m.updated_at) })) as Machine[],
