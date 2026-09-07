@@ -24,9 +24,15 @@ export async function loadCloudGlobal() {
 
 export async function persistCloudGlobal(value: { machines: Machine[]; venueMachines: VenueMachine[]; buffers: TransferBuffer[]; items: TransferBufferItem[]; projects?: Venue[] }) {
   const client = required();
+  const machinesWithCloudImages = await Promise.all(value.machines.map(async (machine) => {
+    if (!machine.imageUrl?.startsWith("data:")) return machine;
+    const response = await fetch(machine.imageUrl); const blob = await response.blob(); const path = `catalog/${machine.id}.${blob.type.split("/")[1] || "png"}`;
+    const upload = await client.storage.from("machine-images").upload(path, blob, { upsert: true, contentType: blob.type }); if (upload.error) throw upload.error;
+    return { ...machine, imageUrl: client.storage.from("machine-images").getPublicUrl(path).data.publicUrl };
+  }));
   const results = await Promise.all([
     client.from("venues").upsert((value.projects ?? []).map((v) => ({ id: v.id, name: v.name }))),
-    client.from("catalog_machines").upsert(value.machines.map((m) => ({ id: m.id, name: m.name, category: m.category, image_url: m.imageUrl, width_mm: m.widthMm, depth_mm: m.depthMm, height_mm: m.heightMm ?? null, model: m.model ?? null, notes: m.notes ?? null, footprint_color: m.footprintColor ?? null, footprint_text_color: m.footprintTextColor ?? null, created_at: m.createdAt, updated_at: m.updatedAt }))),
+    client.from("catalog_machines").upsert(machinesWithCloudImages.map((m) => ({ id: m.id, name: m.name, category: m.category, image_url: m.imageUrl, width_mm: m.widthMm, depth_mm: m.depthMm, height_mm: m.heightMm ?? null, model: m.model ?? null, notes: m.notes ?? null, footprint_color: m.footprintColor ?? null, footprint_text_color: m.footprintTextColor ?? null, created_at: m.createdAt, updated_at: m.updatedAt }))),
     client.from("venue_machines").upsert(value.venueMachines.map((m) => ({ id: m.id, venue_id: m.venueId, machine_id: m.machineId, machine_code: m.machineCode, use_custom_dimensions: m.useCustomDimensions, custom_width_mm: m.customWidthMm, custom_depth_mm: m.customDepthMm, status: m.status, transferred_at: m.transferredAt, created_at: m.createdAt, updated_at: m.updatedAt }))),
     client.from("transfer_buffers").upsert(value.buffers.map((b) => ({ id: b.id, name: b.name, destination_venue_id: b.destinationVenueId ?? null, created_at: b.createdAt, updated_at: b.updatedAt }))),
     client.from("transfer_buffer_items").upsert(value.items.map((i) => ({ id: i.id, transfer_buffer_id: i.transferBufferId, venue_machine_id: i.venueMachineId, source_venue_id: i.sourceVenueId, added_at: i.addedAt, item_order: i.order })))
