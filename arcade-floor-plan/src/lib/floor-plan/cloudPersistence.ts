@@ -34,14 +34,20 @@ export async function persistCloudGlobal(value: { machines: Machine[]; venueMach
     const upload = await client.storage.from("machine-images").upload(path, blob, { upsert: true, contentType: blob.type }); if (upload.error) throw upload.error;
     return { ...machine, imageUrl: client.storage.from("machine-images").getPublicUrl(path).data.publicUrl };
   }));
-  const results = await Promise.all([
-    client.from("venues").upsert((value.projects ?? []).map((v) => ({ id: v.id, name: v.name }))),
-    client.from("catalog_machines").upsert(machinesWithCloudImages.map((m) => ({ id: m.id, name: m.name, category: m.category, image_url: m.imageUrl, width_mm: m.widthMm, depth_mm: m.depthMm, height_mm: m.heightMm ?? null, model: m.model ?? null, notes: m.notes ?? null, footprint_color: m.footprintColor ?? null, footprint_text_color: m.footprintTextColor ?? null, created_at: m.createdAt, updated_at: m.updatedAt }))),
-    client.from("venue_machines").upsert(value.venueMachines.map((m) => ({ id: m.id, venue_id: m.venueId, machine_id: m.machineId, machine_code: m.machineCode, use_custom_dimensions: m.useCustomDimensions, custom_width_mm: m.customWidthMm, custom_depth_mm: m.customDepthMm, status: m.status, transferred_at: m.transferredAt, created_at: m.createdAt, updated_at: m.updatedAt }))),
-    client.from("transfer_buffers").upsert(value.buffers.map((b) => ({ id: b.id, name: b.name, destination_venue_id: b.destinationVenueId ?? null, created_at: b.createdAt, updated_at: b.updatedAt }))),
-    client.from("transfer_buffer_items").upsert(value.items.map((i) => ({ id: i.id, transfer_buffer_id: i.transferBufferId, venue_machine_id: i.venueMachineId, source_venue_id: i.sourceVenueId, added_at: i.addedAt, item_order: i.order })))
-  ]);
-  const error = results.find((result) => result.error)?.error; if (error) throw error;
+  const writes = [
+    ["venues", () => client.from("venues").upsert((value.projects ?? []).map((v) => ({ id: v.id, name: v.name })))],
+    ["catalog_machines", () => client.from("catalog_machines").upsert(machinesWithCloudImages.map((m) => ({ id: m.id, name: m.name, category: m.category, image_url: m.imageUrl, width_mm: m.widthMm, depth_mm: m.depthMm, height_mm: m.heightMm ?? null, model: m.model ?? null, notes: m.notes ?? null, footprint_color: m.footprintColor ?? null, footprint_text_color: m.footprintTextColor ?? null, created_at: m.createdAt, updated_at: m.updatedAt })))],
+    ["venue_machines", () => client.from("venue_machines").upsert(value.venueMachines.map((m) => ({ id: m.id, venue_id: m.venueId, machine_id: m.machineId, machine_code: m.machineCode, use_custom_dimensions: m.useCustomDimensions, custom_width_mm: m.customWidthMm, custom_depth_mm: m.customDepthMm, status: m.status, transferred_at: m.transferredAt, created_at: m.createdAt, updated_at: m.updatedAt })))],
+    ["transfer_buffers", () => client.from("transfer_buffers").upsert(value.buffers.map((b) => ({ id: b.id, name: b.name, destination_venue_id: b.destinationVenueId ?? null, created_at: b.createdAt, updated_at: b.updatedAt })))],
+    ["transfer_buffer_items", () => client.from("transfer_buffer_items").upsert(value.items.map((i) => ({ id: i.id, transfer_buffer_id: i.transferBufferId, venue_machine_id: i.venueMachineId, source_venue_id: i.sourceVenueId, added_at: i.addedAt, item_order: i.order })))]
+  ] as const;
+  for (const [table, write] of writes) {
+    const result = await write();
+    if (result.error) {
+      console.error("[cloud-persistence] write failed", { operation: "upsert", table, code: result.error.code, message: result.error.message, details: result.error.details, hint: result.error.hint });
+      throw result.error;
+    }
+  }
 }
 
 export async function loadCloudFloorPlan(venueId: string) {
