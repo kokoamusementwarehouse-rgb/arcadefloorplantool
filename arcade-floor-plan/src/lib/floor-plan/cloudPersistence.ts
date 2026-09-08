@@ -65,7 +65,8 @@ export async function persistCloudLayoutMachines(venueId: string, value: LayoutM
   const client = required();
   if (value.length) {
     const layoutId = value[0].layoutId;
-    const layoutWrite = await client.from("layouts").upsert({ id: layoutId, venue_id: venueId, name: "Current Layout", updated_at: new Date().toISOString() }); if (layoutWrite.error) throw layoutWrite.error;
+    const now = new Date().toISOString();
+    const layoutWrite = await client.from("layouts").upsert({ id: layoutId, venue_id: venueId, floor_plan_id: `floor_plan_${venueId}`, name: "Current Layout", created_at: now, updated_at: now }); if (layoutWrite.error) throw layoutWrite.error;
     const { error } = await client.from("layout_machines").upsert(value.map((m) => ({ id: m.id, layout_id: m.layoutId, venue_machine_id: m.venueMachineId, x_mm: m.xMm, y_mm: m.yMm, rotation: m.rotation }))); if (error) throw error;
   }
   const { data: layouts } = await client.from("layouts").select("id").eq("venue_id", venueId); const ids = new Set(value.map((m) => m.id));
