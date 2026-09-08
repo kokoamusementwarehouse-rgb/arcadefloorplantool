@@ -28,3 +28,7 @@ nav { display:flex; align-self:stretch; gap:4px; } nav button { color:#68759a; b
 @media (max-width:1450px) and (min-width:901px){.editor-body:not(.editor-body--panels-hidden){grid-template-columns:var(--workspace-width,218px) var(--library-width,280px) minmax(360px,1fr) minmax(210px,248px)!important}.editor-body:not(.editor-body--panels-hidden):has(.project-panel--collapsed){grid-template-columns:52px var(--library-width,280px) minmax(360px,1fr) minmax(210px,248px)!important}}
 .visual-card>span{display:flex;flex-direction:column}.visual-card>span>small{order:1;font-size:9px;color:#33446f;margin-top:2px}.visual-card>span>b{order:2;font-size:8px;color:#7d89a8;margin-top:2px}.visual-card>span>em{order:3}
 .project-panel--collapsed .project-menu{display:none}
+.venue-machine>.machine-row-menu{position:absolute;right:5px;top:32px;z-index:20;display:flex;flex-direction:column;min-width:148px;padding:4px;background:#fff;border:1px solid #dce3f1;border-radius:8px;box-shadow:0 8px 22px #1d285522}
+.machine-row-menu button{display:flex;align-items:center;gap:6px;border:0;background:transparent;color:#4a5a7f;padding:7px 9px;font:inherit;font-size:11px;text-align:left;cursor:pointer;white-space:nowrap}
+.machine-row-menu button:hover{background:#f2f1ff;color:#5149ed}
+.machine-row-menu .machine-row-menu-danger{color:#c94d61}
