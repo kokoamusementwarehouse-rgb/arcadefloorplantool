@@ -50,7 +50,7 @@ export async function persistCloudGlobal(value: { machines: Machine[]; venueMach
   }
   // Reconcile deletions as well as inserts/updates. Upsert alone would leave
   // removed physical machines in the cloud, allowing Realtime to resurrect them.
-  const reconcile = async (table: "venue_machines" | "transfer_buffer_items", key: string, ids: string[]) => {
+  const reconcile = async (table: "venues" | "catalog_machines" | "venue_machines" | "transfer_buffers" | "transfer_buffer_items", key: string, ids: string[]) => {
     const existing = await client.from(table).select(key);
     if (existing.error) throw existing.error;
     const keep = new Set(ids);
@@ -64,6 +64,9 @@ export async function persistCloudGlobal(value: { machines: Machine[]; venueMach
   };
   await reconcile("transfer_buffer_items", "id", value.items.map((item) => item.id));
   await reconcile("venue_machines", "id", value.venueMachines.map((machine) => machine.id));
+  await reconcile("transfer_buffers", "id", value.buffers.map((buffer) => buffer.id));
+  await reconcile("venues", "id", (value.projects ?? []).map((venue) => venue.id));
+  await reconcile("catalog_machines", "id", machinesWithCloudImages.map((machine) => machine.id));
 }
 
 export async function loadCloudFloorPlan(venueId: string) {
