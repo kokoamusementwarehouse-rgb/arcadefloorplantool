@@ -1,7 +1,7 @@
 import type { FloorPlan, Venue } from "../../types/floorPlan";
 import type { LayoutMachine } from "../../types/layout";
 import type { Machine, TransferBuffer, TransferBufferItem, VenueMachine } from "../../types/machine";
-import { loadCloudFloorPlan, loadCloudGlobal, persistCloudFloorPlan, persistCloudGlobal, persistCloudLayoutMachines } from "./cloudPersistence";
+import { loadCloudFloorPlan, loadCloudGlobal, loadCloudLayoutMachines, persistCloudFloorPlan, persistCloudGlobal, persistCloudLayoutMachines } from "./cloudPersistence";
 import { isSupabaseConfigured } from "../supabase/client";
 
 const databaseName = "arcade-floor-plan";
@@ -38,6 +38,7 @@ const write = <T,>(name: string, venueId: string, value: T) => openDatabase().th
 export const loadVenueMachines = (venueId: string) => read<VenueMachine[]>("venue-machines", venueId);
 export const persistVenueMachines = (venueId: string, value: VenueMachine[]) => write("venue-machines", venueId, value);
 export const loadLayoutMachines = (venueId: string) => read<LayoutMachine[]>("layout-machines", venueId);
+export const loadPersistedLayoutMachines = async (venueId: string) => { if (isSupabaseConfigured()) { const cloud = await loadCloudLayoutMachines(venueId); if (cloud) return cloud; } return loadLayoutMachines(venueId); };
 export const persistLayoutMachines = async (venueId: string, value: LayoutMachine[]) => { if (isSupabaseConfigured()) await persistCloudLayoutMachines(venueId, value); await write("layout-machines", venueId, value); };
 export type PersistedGlobalState = { machines: Machine[]; venueMachines: VenueMachine[]; buffers: TransferBuffer[]; items: TransferBufferItem[]; projects?: Venue[] };
 export const loadGlobalState = async () => { try { const cloud = await loadCloudGlobal(); if (cloud) return cloud; } catch { /* local fallback */ } return read<PersistedGlobalState>("transfer-buffers", "global"); };

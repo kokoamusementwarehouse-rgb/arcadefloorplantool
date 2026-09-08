@@ -56,6 +56,16 @@ export async function loadCloudFloorPlan(venueId: string) {
   return { id: data.id, venueId: data.venue_id, imageUrl: data.image_url, imageDataUrl: null, imageWidthPx: data.image_width_px, imageHeightPx: data.image_height_px, scaleMmPerPx: data.scale_mm_per_px == null ? null : Number(data.scale_mm_per_px), backgroundOffsetX: data.background_offset_x == null ? undefined : Number(data.background_offset_x), backgroundOffsetY: data.background_offset_y == null ? undefined : Number(data.background_offset_y), createdAt: iso(data.created_at), updatedAt: iso(data.updated_at) } as FloorPlan;
 }
 
+export async function loadCloudLayoutMachines(venueId: string) {
+  const client = getSupabaseClient(); if (!client) return null;
+  const layoutResult = await client.from("layouts").select("id").eq("venue_id", venueId).order("updated_at", { ascending: false }).limit(1).maybeSingle();
+  if (layoutResult.error) throw layoutResult.error;
+  if (!layoutResult.data) return null;
+  const result = await client.from("layout_machines").select("id,layout_id,venue_machine_id,x_mm,y_mm,rotation").eq("layout_id", layoutResult.data.id);
+  if (result.error) throw result.error;
+  return (result.data ?? []).map((row) => ({ id: row.id, layoutId: row.layout_id, venueMachineId: row.venue_machine_id, xMm: Number(row.x_mm), yMm: Number(row.y_mm), rotation: Number(row.rotation ?? 0) })) as LayoutMachine[];
+}
+
 export async function persistCloudFloorPlan(floorPlan: FloorPlan) {
   const client = required();
   let imageUrl = floorPlan.imageUrl;
@@ -73,7 +83,10 @@ export async function persistCloudLayoutMachines(venueId: string, value: LayoutM
     const layoutId = value[0].layoutId;
     const now = new Date().toISOString();
     const layoutWrite = await client.from("layouts").upsert({ id: layoutId, venue_id: venueId, floor_plan_id: `floor_plan_${venueId}`, name: "Current Layout", created_at: now, updated_at: now }); if (layoutWrite.error) throw layoutWrite.error;
-    const { error } = await client.from("layout_machines").upsert(value.map((m) => ({ id: m.id, layout_id: m.layoutId, venue_machine_id: m.venueMachineId, x_mm: m.xMm, y_mm: m.yMm, rotation: m.rotation }))); if (error) throw error;
+    const existingResult = await client.from("layout_machines").select("id,venue_machine_id").eq("layout_id", layoutId);
+    if (existingResult.error) throw existingResult.error;
+    const existingIds = new Map((existingResult.data ?? []).map((row) => [row.venue_machine_id, row.id]));
+    const { error } = await client.from("layout_machines").upsert(value.map((m) => ({ id: existingIds.get(m.venueMachineId) ?? m.id, layout_id: m.layoutId, venue_machine_id: m.venueMachineId, x_mm: m.xMm, y_mm: m.yMm, rotation: m.rotation })), { onConflict: "venue_machine_id" }); if (error) throw error;
   }
   const { data: layouts } = await client.from("layouts").select("id").eq("venue_id", venueId); const ids = new Set(value.map((m) => m.id));
   if (layouts?.length) { const { data: existing } = await client.from("layout_machines").select("id").eq("layout_id", layouts[0].id); const stale = (existing ?? []).filter((m) => !ids.has(m.id)).map((m) => m.id); if (stale.length) await client.from("layout_machines").delete().in("id", stale); }
