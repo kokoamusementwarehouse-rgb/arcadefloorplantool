@@ -75,8 +75,10 @@ export async function persistCloudGlobal(value: { machines: Machine[]; venueMach
   await reconcile("transfer_buffer_items", "id", value.items.map((item) => item.id));
   await reconcile("venue_machines", "id", value.venueMachines.map((machine) => machine.id));
   await reconcile("transfer_buffers", "id", value.buffers.map((buffer) => buffer.id));
-  await reconcile("venues", "id", (value.projects ?? []).map((venue) => venue.id));
-  await reconcile("catalog_machines", "id", protectedMachines.map((machine) => machine.id));
+  // Do not reconcile venues or catalog models from a per-device snapshot.
+  // A device may legitimately have an older project/model list; treating
+  // missing rows as deletions would remove work created on another device.
+  // Lifecycle deletes must be handled by explicit, scoped delete operations.
 }
 
 export async function loadCloudFloorPlan(venueId: string) {
