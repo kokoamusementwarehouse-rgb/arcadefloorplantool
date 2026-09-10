@@ -17,9 +17,11 @@ export async function loadCloudGlobal() {
   // IndexedDB workspace during first-load migration.
   const meaningfulBuffers = (buffers.data ?? []).filter((buffer) => buffer.name !== "Global staging" || (items.data ?? []).some((item) => item.transfer_buffer_id === buffer.id));
   if (!venues.data?.length && !catalog.data?.length && !units.data?.length && !meaningfulBuffers.length && !items.data?.length) return null;
+  const imageFiles = await client.storage.from("machine-images").list("catalog", { limit: 1000 }).then((result) => result.data ?? []).catch(() => []);
+  const imageByMachineId = new Map(imageFiles.filter((file) => file.name).map((file) => [file.name.replace(/\.[^.]+$/, ""), client.storage.from("machine-images").getPublicUrl(`catalog/${file.name}`).data.publicUrl]));
   return {
     projects: (venues.data ?? []) as Venue[],
-    machines: (catalog.data ?? []).map((m) => ({ id: m.id, name: m.name, category: m.category, imageUrl: m.image_url, widthMm: Number(m.width_mm), depthMm: Number(m.depth_mm), heightMm: m.height_mm == null ? undefined : Number(m.height_mm), model: m.model ?? undefined, notes: m.notes ?? undefined, footprintColor: m.footprint_color ?? undefined, footprintTextColor: m.footprint_text_color ?? undefined, createdAt: iso(m.created_at), updatedAt: iso(m.updated_at) })) as Machine[],
+    machines: (catalog.data ?? []).map((m) => ({ id: m.id, name: m.name, category: m.category, imageUrl: m.image_url ?? imageByMachineId.get(String(m.id)) ?? null, widthMm: Number(m.width_mm), depthMm: Number(m.depth_mm), heightMm: m.height_mm == null ? undefined : Number(m.height_mm), model: m.model ?? undefined, notes: m.notes ?? undefined, footprintColor: m.footprint_color ?? undefined, footprintTextColor: m.footprint_text_color ?? undefined, createdAt: iso(m.created_at), updatedAt: iso(m.updated_at) })) as Machine[],
     venueMachines: (units.data ?? []).map((m) => ({ id: m.id, venueId: m.venue_id, machineId: m.machine_id, machineCode: m.machine_code, useCustomDimensions: m.use_custom_dimensions, customWidthMm: m.custom_width_mm == null ? null : Number(m.custom_width_mm), customDepthMm: m.custom_depth_mm == null ? null : Number(m.custom_depth_mm), status: m.status, transferredAt: m.transferred_at, createdAt: iso(m.created_at), updatedAt: iso(m.updated_at) })) as VenueMachine[],
     buffers: (buffers.data ?? []).map((b) => ({ id: b.id, name: b.name, destinationVenueId: b.destination_venue_id, createdAt: iso(b.created_at), updatedAt: iso(b.updated_at) })) as TransferBuffer[],
     items: (items.data ?? []).map((i) => ({ id: i.id, transferBufferId: i.transfer_buffer_id, venueMachineId: i.venue_machine_id, sourceVenueId: i.source_venue_id, addedAt: iso(i.added_at), order: i.item_order })) as TransferBufferItem[]
@@ -28,15 +30,23 @@ export async function loadCloudGlobal() {
 
 export async function persistCloudGlobal(value: { machines: Machine[]; venueMachines: VenueMachine[]; buffers: TransferBuffer[]; items: TransferBufferItem[]; projects?: Venue[] }) {
   const client = required();
+  const existingCatalog = await client.from("catalog_machines").select("id,image_url,updated_at");
+  if (existingCatalog.error) throw existingCatalog.error;
+  const existingById = new Map((existingCatalog.data ?? []).map((row) => [String(row.id), { imageUrl: row.image_url ? String(row.image_url) : null, updatedAt: row.updated_at ? String(row.updated_at) : "" }]));
   const machinesWithCloudImages = await Promise.all(value.machines.map(async (machine) => {
     if (!machine.imageUrl?.startsWith("data:")) return machine;
     const response = await fetch(machine.imageUrl); const blob = await response.blob(); const path = `catalog/${machine.id}.${blob.type.split("/")[1] || "png"}`;
     const upload = await client.storage.from("machine-images").upload(path, blob, { upsert: true, contentType: blob.type }); if (upload.error) throw upload.error;
     return { ...machine, imageUrl: client.storage.from("machine-images").getPublicUrl(path).data.publicUrl };
   }));
+  const protectedMachines = machinesWithCloudImages.map((machine) => {
+    const existing = existingById.get(machine.id);
+    if (!machine.imageUrl && existing?.imageUrl && Date.parse(existing.updatedAt) > Date.parse(machine.updatedAt)) return { ...machine, imageUrl: existing.imageUrl };
+    return machine;
+  });
   const writes = [
     ["venues", () => client.from("venues").upsert((value.projects ?? []).map((v) => ({ id: v.id, name: v.name })))],
-    ["catalog_machines", () => client.from("catalog_machines").upsert(machinesWithCloudImages.map((m) => ({ id: m.id, name: m.name, category: m.category, image_url: m.imageUrl, width_mm: m.widthMm, depth_mm: m.depthMm, height_mm: m.heightMm ?? null, model: m.model ?? null, notes: m.notes ?? null, footprint_color: m.footprintColor ?? null, footprint_text_color: m.footprintTextColor ?? null, created_at: m.createdAt, updated_at: m.updatedAt })))],
+    ["catalog_machines", () => client.from("catalog_machines").upsert(protectedMachines.map((m) => ({ id: m.id, name: m.name, category: m.category, image_url: m.imageUrl, width_mm: m.widthMm, depth_mm: m.depthMm, height_mm: m.heightMm ?? null, model: m.model ?? null, notes: m.notes ?? null, footprint_color: m.footprintColor ?? null, footprint_text_color: m.footprintTextColor ?? null, created_at: m.createdAt, updated_at: m.updatedAt })))],
     ["venue_machines", () => client.from("venue_machines").upsert(value.venueMachines.map((m) => ({ id: m.id, venue_id: m.venueId, machine_id: m.machineId, machine_code: m.machineCode, use_custom_dimensions: m.useCustomDimensions, custom_width_mm: m.customWidthMm, custom_depth_mm: m.customDepthMm, status: m.status, transferred_at: m.transferredAt, created_at: m.createdAt, updated_at: m.updatedAt })))],
     ["transfer_buffers", () => client.from("transfer_buffers").upsert(value.buffers.map((b) => ({ id: b.id, name: b.name, destination_venue_id: b.destinationVenueId ?? null, created_at: b.createdAt, updated_at: b.updatedAt })))],
     ["transfer_buffer_items", () => client.from("transfer_buffer_items").upsert(value.items.map((i) => ({ id: i.id, transfer_buffer_id: i.transferBufferId, venue_machine_id: i.venueMachineId, source_venue_id: i.sourceVenueId, added_at: i.addedAt, item_order: i.order })))]
@@ -66,7 +76,7 @@ export async function persistCloudGlobal(value: { machines: Machine[]; venueMach
   await reconcile("venue_machines", "id", value.venueMachines.map((machine) => machine.id));
   await reconcile("transfer_buffers", "id", value.buffers.map((buffer) => buffer.id));
   await reconcile("venues", "id", (value.projects ?? []).map((venue) => venue.id));
-  await reconcile("catalog_machines", "id", machinesWithCloudImages.map((machine) => machine.id));
+  await reconcile("catalog_machines", "id", protectedMachines.map((machine) => machine.id));
 }
 
 export async function loadCloudFloorPlan(venueId: string) {
@@ -92,6 +102,11 @@ export async function persistCloudFloorPlan(floorPlan: FloorPlan) {
     const response = await fetch(floorPlan.imageDataUrl); const blob = await response.blob(); const path = `${floorPlan.venueId}/${floorPlan.id}.${blob.type.split("/")[1] || "png"}`;
     const upload = await client.storage.from("floor-plans").upload(path, blob, { upsert: true, contentType: blob.type }); if (upload.error) throw upload.error;
     imageUrl = client.storage.from("floor-plans").getPublicUrl(path).data.publicUrl;
+  }
+  if (!imageUrl && !floorPlan.imageDataUrl) {
+    const existing = await client.from("floor_plans").select("image_url,updated_at").eq("id", floorPlan.id).maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data?.image_url && Date.parse(String(existing.data.updated_at ?? "")) > Date.parse(floorPlan.updatedAt)) imageUrl = String(existing.data.image_url);
   }
   const { error } = await client.from("floor_plans").upsert({ id: floorPlan.id, venue_id: floorPlan.venueId, image_url: imageUrl, image_width_px: floorPlan.imageWidthPx, image_height_px: floorPlan.imageHeightPx, scale_mm_per_px: floorPlan.scaleMmPerPx, background_offset_x: floorPlan.backgroundOffsetX ?? null, background_offset_y: floorPlan.backgroundOffsetY ?? null, created_at: floorPlan.createdAt, updated_at: floorPlan.updatedAt }); if (error) throw error;
 }
