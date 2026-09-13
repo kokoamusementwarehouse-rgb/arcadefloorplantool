@@ -19,7 +19,18 @@ export function FloorPlanEditor() {
   const { venue, layout, floorPlan, fullStoreView, setFullStoreView, layoutMachines, projects, hasHydrated, setVenue, persistenceStatus, lastSavedAt } = useFloorPlanStore();
   const editorRef = useRef<HTMLDivElement>(null); const [showAllConnections, setShowAllConnections] = useState(false); const [panelsHidden, setPanelsHidden] = useState(false); const restoredVenue = useRef(false);
   useEffect(() => { const toggle = () => setPanelsHidden((value) => !value); window.addEventListener("floorplan:toggle-panels", toggle); return () => window.removeEventListener("floorplan:toggle-panels", toggle); }, []);
-  useEffect(() => { if (!hasHydrated || restoredVenue.current) return; restoredVenue.current = true; const savedId = localStorage.getItem("floorplan-active-venue"); const savedVenue = projects.find((item) => item.id === savedId); if (savedVenue && savedVenue.id !== venue.id) setVenue(savedVenue); }, [hasHydrated, projects, setVenue, venue.id]);
+  /**
+   * Only the selected venue id is restored locally.  The Venue object and all
+   * of its map data have already come from the cloud hydration in
+   * MachineLibrary.  A fresh device simply opens the first cloud venue.
+   */
+  useEffect(() => {
+    if (!hasHydrated || restoredVenue.current) return;
+    restoredVenue.current = true;
+    const savedId = localStorage.getItem("floorplan-active-venue");
+    const nextVenue = projects.find((item) => item.id === savedId) ?? (venue.id === "venue_new" ? projects[0] : undefined);
+    if (nextVenue && nextVenue.id !== venue.id) setVenue(nextVenue);
+  }, [hasHydrated, projects, setVenue, venue.id]);
   const cloudMode = isSupabaseConfigured();
   const persistenceLabel = persistenceStatus === "saving" ? "Saving…" : persistenceStatus === "failed" ? "Save failed" : lastSavedAt ? (cloudMode ? "Saved to cloud" : "Saved locally") : (cloudMode ? "Cloud ready" : "Auto-saved locally");
   const canExport = Boolean(floorPlan.imageDataUrl || floorPlan.imageUrl) && !fullStoreView;

@@ -1,10 +1,11 @@
 "use client";
 
 import { CaretLeft, CheckCircle, ClipboardText, CopySimple, Package, Plus, ShippingContainer, Storefront, Wrench, X } from "@phosphor-icons/react";
-import { useEffect, useMemo, useState } from "react";
-import { allocateShipmentMachines, createShipment, deleteMachineAsset, loadMachineAssetWorkspace, patchShipment, patchVenueMachine, type MachineAssetWorkspace } from "../../lib/machine-assets";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { allocateShipmentMachines, copyMachineAsset, createShipment, deleteMachineAsset, loadMachineAssetWorkspace, patchShipment, patchVenueMachine, type MachineAssetWorkspace } from "../../lib/machine-assets";
 import type { MissingPart, ShipmentStatus, VenueMachine } from "../../types/machine";
 import { ProductNavigation } from "../navigation/ProductNavigation";
+import { getSupabaseClient } from "../../lib/supabase/client";
 
 type Tab = "all" | "shipments" | "sale" | "repairs";
 const emptyWorkspace: MachineAssetWorkspace = { venues: [], models: [], units: [], shipments: [], shipmentItems: [] };
@@ -26,8 +27,46 @@ export function MachineRegistry() {
   const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState(""); const [venueFilter, setVenueFilter] = useState("all"); const [categoryFilter, setCategoryFilter] = useState("all");
   const [view, setView] = useState<"table" | "cards">("table"); const [selectedId, setSelectedId] = useState<string | null>(null); const [shipmentOpen, setShipmentOpen] = useState(false); const [allocateId, setAllocateId] = useState<string | null>(null);
-  const refresh = async () => { setLoading(true); try { setWorkspace(await loadMachineAssetWorkspace()); setError(null); } catch (cause) { setError(errorMessage(cause, "Could not load machine assets.")); } finally { setLoading(false); } };
+  const refreshVersion = useRef(0);
+  /** Cloud → React only. A stale network response cannot replace a newer one. */
+  const refresh = useCallback(async (showLoading = true) => {
+    const version = ++refreshVersion.current;
+    if (showLoading) setLoading(true);
+    try {
+      const next = await loadMachineAssetWorkspace();
+      if (version !== refreshVersion.current) return;
+      setWorkspace(next);
+      setError(null);
+    } catch (cause) {
+      if (version === refreshVersion.current) setError(errorMessage(cause, "Could not load machine assets."));
+    } finally {
+      if (showLoading && version === refreshVersion.current) setLoading(false);
+    }
+  }, []);
   useEffect(() => { void refresh(); }, []);
+  /**
+   * Realtime changes always re-read the cloud snapshot.  There is no local
+   * cache and no write-back path here, so a remote update cannot echo or
+   * revive a stale machine/shipment on this page.
+   */
+  useEffect(() => {
+    const client = getSupabaseClient();
+    if (!client) return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleRefresh = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { if (!disposed) void refresh(false); }, 150);
+    };
+    const channel = client.channel("machine-assets-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "venues" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "catalog_machines" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "venue_machines" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "shipments" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "shipment_items" }, scheduleRefresh)
+      .subscribe();
+    return () => { disposed = true; if (timer) clearTimeout(timer); void client.removeChannel(channel); };
+  }, [refresh]);
   const selected = workspace.units.find((unit) => unit.id === selectedId) ?? null;
   const categories = useMemo(() => [...new Set(workspace.models.map((item) => item.category))].sort(), [workspace.models]);
   const shipmentUnitIds = new Set(workspace.shipmentItems.map((item) => item.venueMachineId));
@@ -44,10 +83,7 @@ export function MachineRegistry() {
   const updateUnit = async (id: string, patch: Parameters<typeof patchVenueMachine>[1]) => { setSaving(true); try { await patchVenueMachine(id, patch); await refresh(); } catch (cause) { setError(errorMessage(cause, "Could not update machine.")); } finally { setSaving(false); } };
   const duplicate = async (unit: VenueMachine) => {
     setSaving(true); try {
-      const used = new Set(workspace.units.map((item) => item.machineCode.toLowerCase())); const base = unit.machineCode.replace(/-\d+$/, ""); let n = 2; let code = `${base}-${n}`; while (used.has(code.toLowerCase())) { n += 1; code = `${base}-${n}`; }
-      const client = (await import("../../lib/supabase/client")).getSupabaseClient(); if (!client) throw new Error("Supabase is not configured."); const timestamp = new Date().toISOString();
-      const { error: insertError } = await client.from("venue_machines").insert({ id: `venue_machine_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, venue_id: unit.venueId, machine_id: unit.machineId, machine_code: code, use_custom_dimensions: unit.useCustomDimensions, custom_width_mm: unit.customWidthMm, custom_depth_mm: unit.customDepthMm, status: "planned", transferred_at: null, condition: unit.condition, for_sale: false, maintenance_status: "OK", maintenance_note: null, missing_parts: [], received_at: null, created_at: timestamp, updated_at: timestamp });
-      if (insertError) throw insertError; await refresh();
+      await copyMachineAsset(unit, workspace.units); await refresh();
     } catch (cause) { setError(errorMessage(cause, "Could not copy machine.")); } finally { setSaving(false); }
   };
   const remove = async (unit: VenueMachine) => { if (!window.confirm(`Delete ${unit.machineCode}? This removes the physical machine and its placement.`)) return; setSaving(true); try { await deleteMachineAsset(unit.id); setSelectedId(null); await refresh(); } catch (cause) { setError(errorMessage(cause, "Could not delete machine.")); } finally { setSaving(false); } };

@@ -1,9 +1,8 @@
 import { getSupabaseClient } from "../supabase/client";
 import type { FloorPlan, Venue } from "../../types/floorPlan";
-import type { LayoutMachine } from "../../types/layout";
+import type { Layout, LayoutMachine } from "../../types/layout";
 import type { Machine, TransferBuffer, TransferBufferItem, VenueMachine } from "../../types/machine";
 
-const required = () => { const client = getSupabaseClient(); if (!client) throw new Error("Supabase is not configured."); return client; };
 const iso = (value: string) => value || new Date().toISOString();
 
 export async function loadCloudGlobal() {
@@ -28,102 +27,33 @@ export async function loadCloudGlobal() {
   };
 }
 
-export async function persistCloudGlobal(value: { machines: Machine[]; venueMachines: VenueMachine[]; buffers: TransferBuffer[]; items: TransferBufferItem[]; projects?: Venue[] }) {
-  const client = required();
-  const existingCatalog = await client.from("catalog_machines").select("id,image_url,updated_at");
-  if (existingCatalog.error) throw existingCatalog.error;
-  const existingById = new Map((existingCatalog.data ?? []).map((row) => [String(row.id), { imageUrl: row.image_url ? String(row.image_url) : null, updatedAt: row.updated_at ? String(row.updated_at) : "" }]));
-  const machinesWithCloudImages = await Promise.all(value.machines.map(async (machine) => {
-    if (!machine.imageUrl?.startsWith("data:")) return machine;
-    const response = await fetch(machine.imageUrl); const blob = await response.blob(); const path = `catalog/${machine.id}.${blob.type.split("/")[1] || "png"}`;
-    const upload = await client.storage.from("machine-images").upload(path, blob, { upsert: true, contentType: blob.type }); if (upload.error) throw upload.error;
-    return { ...machine, imageUrl: client.storage.from("machine-images").getPublicUrl(path).data.publicUrl };
-  }));
-  const protectedMachines = machinesWithCloudImages.map((machine) => {
-    const existing = existingById.get(machine.id);
-    if (!machine.imageUrl && existing?.imageUrl && Date.parse(existing.updatedAt) > Date.parse(machine.updatedAt)) return { ...machine, imageUrl: existing.imageUrl };
-    return machine;
-  });
-  const writes = [
-    ["venues", () => client.from("venues").upsert((value.projects ?? []).map((v) => ({ id: v.id, name: v.name })))],
-    ["catalog_machines", () => client.from("catalog_machines").upsert(protectedMachines.map((m) => ({ id: m.id, name: m.name, category: m.category, image_url: m.imageUrl, width_mm: m.widthMm, depth_mm: m.depthMm, height_mm: m.heightMm ?? null, model: m.model ?? null, notes: m.notes ?? null, footprint_color: m.footprintColor ?? null, footprint_text_color: m.footprintTextColor ?? null, created_at: m.createdAt, updated_at: m.updatedAt })))],
-    ["venue_machines", () => client.from("venue_machines").upsert(value.venueMachines.map((m) => ({ id: m.id, venue_id: m.venueId, machine_id: m.machineId, machine_code: m.machineCode, use_custom_dimensions: m.useCustomDimensions, custom_width_mm: m.customWidthMm, custom_depth_mm: m.customDepthMm, status: m.status, transferred_at: m.transferredAt, condition: m.condition, for_sale: m.forSale, maintenance_status: m.maintenanceStatus, maintenance_note: m.maintenanceNote ?? null, missing_parts: m.missingParts ?? [], received_at: m.receivedAt ?? null, created_at: m.createdAt, updated_at: m.updatedAt })))],
-    ["transfer_buffers", () => client.from("transfer_buffers").upsert(value.buffers.map((b) => ({ id: b.id, name: b.name, destination_venue_id: b.destinationVenueId ?? null, created_at: b.createdAt, updated_at: b.updatedAt })))],
-    ["transfer_buffer_items", () => client.from("transfer_buffer_items").upsert(value.items.map((i) => ({ id: i.id, transfer_buffer_id: i.transferBufferId, venue_machine_id: i.venueMachineId, source_venue_id: i.sourceVenueId, added_at: i.addedAt, item_order: i.order })))]
-  ] as const;
-  for (const [table, write] of writes) {
-    const result = await write();
-    if (result.error) {
-      console.error("[cloud-persistence] write failed", { operation: "upsert", table, code: result.error.code, message: result.error.message, details: result.error.details, hint: result.error.hint });
-      throw result.error;
-    }
-  }
-  // Reconcile deletions as well as inserts/updates. Upsert alone would leave
-  // removed physical machines in the cloud, allowing Realtime to resurrect them.
-  const reconcile = async (table: "venues" | "catalog_machines" | "venue_machines" | "transfer_buffers" | "transfer_buffer_items", key: string, ids: string[]) => {
-    const existing = await client.from(table).select(key);
-    if (existing.error) throw existing.error;
-    const keep = new Set(ids);
-    const stale = (existing.data ?? []).map((row) => String((row as unknown as Record<string, unknown>)[key])).filter((id) => !keep.has(id));
-    if (!stale.length) return;
-    const result = await client.from(table).delete().in(key, stale);
-    if (result.error) {
-      console.error("[cloud-persistence] delete reconciliation failed", { operation: "delete", table, code: result.error.code, message: result.error.message, details: result.error.details, hint: result.error.hint });
-      throw result.error;
-    }
-  };
-  await reconcile("transfer_buffer_items", "id", value.items.map((item) => item.id));
-  await reconcile("venue_machines", "id", value.venueMachines.map((machine) => machine.id));
-  await reconcile("transfer_buffers", "id", value.buffers.map((buffer) => buffer.id));
-  // Do not reconcile venues or catalog models from a per-device snapshot.
-  // A device may legitimately have an older project/model list; treating
-  // missing rows as deletions would remove work created on another device.
-  // Lifecycle deletes must be handled by explicit, scoped delete operations.
-}
-
 export async function loadCloudFloorPlan(venueId: string) {
   const client = getSupabaseClient(); if (!client) return null;
   const { data, error } = await client.from("floor_plans").select("*").eq("venue_id", venueId).maybeSingle(); if (error) throw error; if (!data) return null;
   return { id: data.id, venueId: data.venue_id, imageUrl: data.image_url, imageDataUrl: null, imageWidthPx: data.image_width_px, imageHeightPx: data.image_height_px, scaleMmPerPx: data.scale_mm_per_px == null ? null : Number(data.scale_mm_per_px), backgroundOffsetX: data.background_offset_x == null ? undefined : Number(data.background_offset_x), backgroundOffsetY: data.background_offset_y == null ? undefined : Number(data.background_offset_y), createdAt: iso(data.created_at), updatedAt: iso(data.updated_at) } as FloorPlan;
 }
 
-export async function loadCloudLayoutMachines(venueId: string) {
-  const client = getSupabaseClient(); if (!client) return null;
-  const layoutResult = await client.from("layouts").select("id").eq("venue_id", venueId).order("updated_at", { ascending: false }).limit(1).maybeSingle();
+/**
+ * Reads the exact layout record as well as its placements.  The layout id is
+ * business data: inventing `layout_${venueId}` after a cloud read can create a
+ * second layout and split a venue's placements across two records.
+ */
+export async function loadCloudLayout(venueId: string): Promise<{ layout: Layout | null; machines: LayoutMachine[] }> {
+  const client = getSupabaseClient(); if (!client) return { layout: null, machines: [] };
+  const layoutResult = await client.from("layouts").select("*").eq("venue_id", venueId).order("updated_at", { ascending: false }).limit(1).maybeSingle();
   if (layoutResult.error) throw layoutResult.error;
-  if (!layoutResult.data) return null;
+  if (!layoutResult.data) return { layout: null, machines: [] };
   const result = await client.from("layout_machines").select("id,layout_id,venue_machine_id,x_mm,y_mm,rotation").eq("layout_id", layoutResult.data.id);
   if (result.error) throw result.error;
-  return (result.data ?? []).map((row) => ({ id: row.id, layoutId: row.layout_id, venueMachineId: row.venue_machine_id, xMm: Number(row.x_mm), yMm: Number(row.y_mm), rotation: Number(row.rotation ?? 0) })) as LayoutMachine[];
-}
-
-export async function persistCloudFloorPlan(floorPlan: FloorPlan) {
-  const client = required();
-  let imageUrl = floorPlan.imageUrl;
-  if (floorPlan.imageDataUrl?.startsWith("data:")) {
-    const response = await fetch(floorPlan.imageDataUrl); const blob = await response.blob(); const path = `${floorPlan.venueId}/${floorPlan.id}.${blob.type.split("/")[1] || "png"}`;
-    const upload = await client.storage.from("floor-plans").upload(path, blob, { upsert: true, contentType: blob.type }); if (upload.error) throw upload.error;
-    imageUrl = client.storage.from("floor-plans").getPublicUrl(path).data.publicUrl;
-  }
-  if (!imageUrl && !floorPlan.imageDataUrl) {
-    const existing = await client.from("floor_plans").select("image_url,updated_at").eq("id", floorPlan.id).maybeSingle();
-    if (existing.error) throw existing.error;
-    if (existing.data?.image_url && Date.parse(String(existing.data.updated_at ?? "")) > Date.parse(floorPlan.updatedAt)) imageUrl = String(existing.data.image_url);
-  }
-  const { error } = await client.from("floor_plans").upsert({ id: floorPlan.id, venue_id: floorPlan.venueId, image_url: imageUrl, image_width_px: floorPlan.imageWidthPx, image_height_px: floorPlan.imageHeightPx, scale_mm_per_px: floorPlan.scaleMmPerPx, background_offset_x: floorPlan.backgroundOffsetX ?? null, background_offset_y: floorPlan.backgroundOffsetY ?? null, created_at: floorPlan.createdAt, updated_at: floorPlan.updatedAt }); if (error) throw error;
-}
-
-export async function persistCloudLayoutMachines(venueId: string, value: LayoutMachine[]) {
-  const client = required();
-  if (value.length) {
-    const layoutId = value[0].layoutId;
-    const now = new Date().toISOString();
-    const layoutWrite = await client.from("layouts").upsert({ id: layoutId, venue_id: venueId, floor_plan_id: `floor_plan_${venueId}`, name: "Current Layout", created_at: now, updated_at: now }); if (layoutWrite.error) throw layoutWrite.error;
-    const existingResult = await client.from("layout_machines").select("id,venue_machine_id").eq("layout_id", layoutId);
-    if (existingResult.error) throw existingResult.error;
-    const existingIds = new Map((existingResult.data ?? []).map((row) => [row.venue_machine_id, row.id]));
-    const { error } = await client.from("layout_machines").upsert(value.map((m) => ({ id: existingIds.get(m.venueMachineId) ?? m.id, layout_id: m.layoutId, venue_machine_id: m.venueMachineId, x_mm: m.xMm, y_mm: m.yMm, rotation: m.rotation })), { onConflict: "venue_machine_id" }); if (error) throw error;
-  }
-  const { data: layouts } = await client.from("layouts").select("id").eq("venue_id", venueId); const ids = new Set(value.map((m) => m.id));
-  if (layouts?.length) { const { data: existing } = await client.from("layout_machines").select("id").eq("layout_id", layouts[0].id); const stale = (existing ?? []).filter((m) => !ids.has(m.id)).map((m) => m.id); if (stale.length) await client.from("layout_machines").delete().in("id", stale); }
+  return {
+    layout: {
+      id: layoutResult.data.id,
+      venueId: layoutResult.data.venue_id,
+      floorPlanId: layoutResult.data.floor_plan_id,
+      name: layoutResult.data.name,
+      createdAt: iso(layoutResult.data.created_at),
+      updatedAt: iso(layoutResult.data.updated_at),
+    } as Layout,
+    machines: (result.data ?? []).map((row) => ({ id: row.id, layoutId: row.layout_id, venueMachineId: row.venue_machine_id, xMm: Number(row.x_mm), yMm: Number(row.y_mm), rotation: Number(row.rotation ?? 0) })) as LayoutMachine[],
+  };
 }

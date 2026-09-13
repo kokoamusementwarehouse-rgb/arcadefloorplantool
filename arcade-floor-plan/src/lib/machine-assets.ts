@@ -80,6 +80,60 @@ export async function deleteMachineAsset(id: string) {
   if (error) throw error;
 }
 
+/**
+ * Explicit user command for a second physical unit.  Keeping it here means
+ * the Machines page has the same narrow, command-only cloud write boundary as
+ * the Floor Plan editor; route hydration never calls this function.
+ */
+export async function copyMachineAsset(unit: VenueMachine, existingUnits: VenueMachine[]) {
+  const used = new Set(existingUnits.map((item) => item.machineCode.toLowerCase()));
+  const base = unit.machineCode.replace(/-\d+$/, "");
+  let suffix = 2;
+  let machineCode = `${base}-${suffix}`;
+  while (used.has(machineCode.toLowerCase())) { suffix += 1; machineCode = `${base}-${suffix}`; }
+  const timestamp = new Date().toISOString();
+  const copy: VenueMachine = {
+    id: `venue_machine_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    venueId: unit.venueId,
+    machineId: unit.machineId,
+    machineCode,
+    useCustomDimensions: unit.useCustomDimensions,
+    customWidthMm: unit.customWidthMm,
+    customDepthMm: unit.customDepthMm,
+    status: "planned",
+    transferredAt: null,
+    condition: unit.condition,
+    forSale: false,
+    maintenanceStatus: "OK",
+    maintenanceNote: null,
+    missingParts: [],
+    receivedAt: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  const { error } = await clientOrThrow().from("venue_machines").insert({
+    id: copy.id,
+    venue_id: copy.venueId,
+    machine_id: copy.machineId,
+    machine_code: copy.machineCode,
+    use_custom_dimensions: copy.useCustomDimensions,
+    custom_width_mm: copy.customWidthMm,
+    custom_depth_mm: copy.customDepthMm,
+    status: copy.status,
+    transferred_at: null,
+    condition: copy.condition,
+    for_sale: false,
+    maintenance_status: "OK",
+    maintenance_note: null,
+    missing_parts: [],
+    received_at: null,
+    created_at: copy.createdAt,
+    updated_at: copy.updatedAt,
+  });
+  if (error) throw error;
+  return copy;
+}
+
 export type ShipmentDraft = { shipmentRef?: string; expectedArrivalDate?: string; status: ShipmentStatus; notes?: string; lines: Array<{ machineId: string; quantity: number }> };
 
 export async function createShipment(draft: ShipmentDraft, existingUnits: VenueMachine[]) {

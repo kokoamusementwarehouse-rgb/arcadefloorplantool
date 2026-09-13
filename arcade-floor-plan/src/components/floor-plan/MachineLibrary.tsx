@@ -1,8 +1,8 @@
 import { MagnifyingGlass, Plus } from "@phosphor-icons/react";
-import { DragEvent, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { DragEvent, useEffect, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { MachineLibraryItem } from "./MachineLibraryItem";
 import { useFloorPlanStore } from "../../store/floorPlanStore";
-import { deleteVenuePersistence, loadGlobalState, persistGlobalState } from "../../lib/floor-plan/persistence";
+import { cacheGlobalState, loadGlobalState } from "../../lib/floor-plan/persistence";
 import { revealMachineVisualCard } from "../../lib/floor-plan/navigation";
 import { getSupabaseClient } from "../../lib/supabase/client";
 
@@ -24,24 +24,47 @@ export function MachineLibrary() {
   const [query, setQuery] = useState(""); const [filter, setFilter] = useState("All"); const [category, setCategory] = useState("All types"); const [libraryWidth, setLibraryWidth] = useState(280);
   const [addOpen, setAddOpen] = useState(false); const [createOpen, setCreateOpen] = useState(false); const [catalogMachineId, setCatalogMachineId] = useState("");
   const [duplicateDraft, setDuplicateDraft] = useState<{ input: CatalogDraft; addToVenue: boolean } | null>(null);
-  const { venueMachines, machines, layoutMachines, selectedMachineId, setSelectedMachineId, venue, selectedVenueMachineIds, toggleVenueMachineSelection, transferBuffers, moveSelectedToBuffer, moveBufferItemsToVenue, transferBufferItems, projects, hydrateGlobal, hasHydrated, setHasHydrated, setPersistenceStatus, addVenueMachine, createCatalogMachine, updateMachineCode, updateMachineCategory, setFeedback, feedback, deleteVenueMachines } = useFloorPlanStore();
-  const remoteGlobalApply = useRef(false);
+  const { venueMachines, machines, layoutMachines, selectedMachineId, setSelectedMachineId, venue, selectedVenueMachineIds, toggleVenueMachineSelection, transferBuffers, moveSelectedToBuffer, moveBufferItemsToVenue, hydrateGlobal, hasHydrated, setHasHydrated, addVenueMachine, createCatalogMachine, updateMachineCode, updateMachineCategory, setFeedback, feedback, deleteVenueMachines } = useFloorPlanStore();
   const [bufferDropCount, setBufferDropCount] = useState(0);
   useEffect(() => { const saved = Number(localStorage.getItem("machine-library-width")); const width = Number.isFinite(saved) ? Math.min(420, Math.max(220, saved)) : 280; setLibraryWidth(width); document.documentElement.style.setProperty("--library-width", `${width}px`); }, []);
   const resizeLibrary = (event: ReactPointerEvent<HTMLDivElement>) => { event.preventDefault(); const startX = event.clientX; const startWidth = libraryWidth; let currentWidth = startWidth; const move = (moveEvent: PointerEvent) => { currentWidth = Math.min(420, Math.max(220, startWidth + moveEvent.clientX - startX)); setLibraryWidth(currentWidth); document.documentElement.style.setProperty("--library-width", `${currentWidth}px`); }; const stop = () => { localStorage.setItem("machine-library-width", String(currentWidth)); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", stop); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", stop); };
-  useEffect(() => { let cancelled = false; const removedVenueIds = new Set(["venue_koko_rhodes", "venue_koko_parramatta", "venue_northbridge", "venue_rhodes_warehouse", "venue_qa_dense"]); const removedMachineIds = new Set(["machine_mini-claw", "machine_double-claw", "machine_racing", "machine_shooting", "machine_basketball", "machine_pool", "machine_kids-ride", "machine_play_a_ball"]); const isLegacyVenueMachine = (id: string) => /^(venue_machine_(C|R|S|B|P|K|PAB|QA))/.test(id); loadGlobalState().then(async (saved) => { if (cancelled) return; if (saved) { const removedMachineInstanceIds = new Set(saved.venueMachines.filter((item) => removedVenueIds.has(item.venueId ?? "") || isLegacyVenueMachine(item.id)).map((item) => item.id)); const cleaned = { machines: saved.machines.filter((item) => !removedMachineIds.has(item.id)), venueMachines: saved.venueMachines.filter((item) => !removedMachineInstanceIds.has(item.id)), buffers: saved.buffers.filter((item) => item.id !== "buffer_rhodes_parramatta"), items: saved.items.filter((item) => !removedMachineInstanceIds.has(item.venueMachineId) && item.transferBufferId !== "buffer_rhodes_parramatta"), projects: (saved.projects ?? []).filter((item) => !removedVenueIds.has(item.id)) }; hydrateGlobal(cleaned); await Promise.all([...removedVenueIds].map((id) => deleteVenuePersistence(id).catch(() => undefined))); } setHasHydrated(true); }).catch(() => { if (!cancelled) setHasHydrated(true); }); return () => { cancelled = true; }; }, [hydrateGlobal, setHasHydrated]);
-  useEffect(() => { if (!hasHydrated) return; if (remoteGlobalApply.current) { remoteGlobalApply.current = false; return; } setPersistenceStatus("saving"); persistGlobalState({ machines, venueMachines, buffers: transferBuffers, items: transferBufferItems, projects }).then(() => setPersistenceStatus("saved")).catch((error) => { console.error("[cloud-persistence] workspace save failed", error); setPersistenceStatus("failed"); }); }, [hasHydrated, machines, venueMachines, transferBuffers, transferBufferItems, projects, setPersistenceStatus]);
+  /** Cloud snapshot (or offline cache fallback) is read-only hydration. It never writes back. */
+  useEffect(() => { let cancelled = false; void (async () => {
+    try {
+      const loaded = await loadGlobalState();
+      if (cancelled || !loaded) return;
+      hydrateGlobal(loaded.value, loaded.source === "cloud" ? "CLOUD_HYDRATION" : "CACHE_RESTORE");
+      if (loaded.source === "cloud") await cacheGlobalState(loaded.value);
+      else setFeedback("Cloud workspace is unavailable. Showing cached data only.");
+    } catch (error) {
+      console.error("[cloud-hydration] workspace load failed", error);
+      if (!cancelled) setFeedback("Cloud workspace could not be loaded.");
+    } finally {
+      if (!cancelled) setHasHydrated(true);
+    }
+  })(); return () => { cancelled = true; }; }, [hydrateGlobal, setFeedback, setHasHydrated]);
   useEffect(() => {
     const client = getSupabaseClient(); if (!client || !hasHydrated) return;
-    const channel = client.channel("workspace-realtime").on("postgres_changes", { event: "*", schema: "public", table: "venue_machines" }, async () => {
-      const snapshot = await loadGlobalState(); if (!snapshot) return; remoteGlobalApply.current = true; hydrateGlobal(snapshot);
-    }).on("postgres_changes", { event: "*", schema: "public", table: "catalog_machines" }, async () => {
-      const snapshot = await loadGlobalState(); if (!snapshot) return; remoteGlobalApply.current = true; hydrateGlobal(snapshot);
-    }).on("postgres_changes", { event: "*", schema: "public", table: "transfer_buffers" }, async () => {
-      const snapshot = await loadGlobalState(); if (!snapshot) return; remoteGlobalApply.current = true; hydrateGlobal(snapshot);
-    }).on("postgres_changes", { event: "*", schema: "public", table: "transfer_buffer_items" }, async () => {
-      const snapshot = await loadGlobalState(); if (!snapshot) return; remoteGlobalApply.current = true; hydrateGlobal(snapshot);
-    }).subscribe();
+    let refreshing = false;
+    const refreshFromCloud = async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const loaded = await loadGlobalState();
+        // A realtime event must never promote an offline cache into state.
+        if (!loaded || loaded.source !== "cloud") return;
+        hydrateGlobal(loaded.value, "REALTIME_REMOTE");
+        await cacheGlobalState(loaded.value);
+      } catch (error) { console.warn("[cloud-realtime] workspace refresh failed", error); }
+      finally { refreshing = false; }
+    };
+    const channel = client.channel("workspace-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "venues" }, () => { void refreshFromCloud(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "venue_machines" }, () => { void refreshFromCloud(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "catalog_machines" }, () => { void refreshFromCloud(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "transfer_buffers" }, () => { void refreshFromCloud(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "transfer_buffer_items" }, () => { void refreshFromCloud(); })
+      .subscribe();
     return () => { void client.removeChannel(channel); };
   }, [hasHydrated, hydrateGlobal]);
   const categories = useMemo(() => [...new Set(machines.map((machine) => machine.category).filter(Boolean))].sort(), [machines]);

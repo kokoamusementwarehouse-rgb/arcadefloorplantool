@@ -10,7 +10,7 @@
     "preview": "next start",
     "test:sites": "node --test tests/sites-worker.test.mjs",
     "test:navigation": "node --experimental-strip-types --test tests/navigation.test.mjs",
-    "test:core": "node --experimental-strip-types --test tests/navigation.test.mjs tests/coordinates.test.mjs tests/connection.test.mjs"
+    "test:core": "node --experimental-strip-types --test tests/navigation.test.mjs tests/coordinates.test.mjs tests/connection.test.mjs tests/cloud-state-safety.test.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",

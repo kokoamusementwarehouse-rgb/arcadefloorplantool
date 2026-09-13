@@ -1,7 +1,7 @@
 import type { FloorPlan, Venue } from "../../types/floorPlan";
-import type { LayoutMachine } from "../../types/layout";
+import type { Layout, LayoutMachine } from "../../types/layout";
 import type { Machine, TransferBuffer, TransferBufferItem, VenueMachine } from "../../types/machine";
-import { loadCloudFloorPlan, loadCloudGlobal, loadCloudLayoutMachines, persistCloudFloorPlan, persistCloudGlobal, persistCloudLayoutMachines } from "./cloudPersistence";
+import { loadCloudFloorPlan, loadCloudGlobal, loadCloudLayout } from "./cloudPersistence";
 import { isSupabaseConfigured } from "../supabase/client";
 
 const databaseName = "arcade-floor-plan";
@@ -14,18 +14,26 @@ const openDatabase = () => new Promise<IDBDatabase>((resolve, reject) => {
   request.onerror = () => reject(request.error);
 });
 
-export async function loadPersistedFloorPlan(venueId: string): Promise<FloorPlan | null> {
-  try { const cloud = await loadCloudFloorPlan(venueId); if (cloud) return cloud; } catch { /* local fallback keeps the pilot usable before schema setup */ }
+/**
+ * In Cloud Mode a successful empty response is authoritative. Cache is only an
+ * offline/read-error fallback and is never promoted into a cloud write.
+ */
+export type LoadedBusinessRecord<T> = { value: T | null; source: "cloud" | "cache" };
+
+export async function loadPersistedFloorPlan(venueId: string): Promise<LoadedBusinessRecord<FloorPlan>> {
+  if (isSupabaseConfigured()) {
+    try { return { value: await loadCloudFloorPlan(venueId), source: "cloud" }; } catch { /* cache may keep an offline editor readable */ }
+  }
   const database = await openDatabase();
   return new Promise((resolve, reject) => {
     const request = database.transaction(storeName, "readonly").objectStore(storeName).get(venueId);
-    request.onsuccess = () => resolve((request.result as FloorPlan | undefined) ?? null);
+    request.onsuccess = () => resolve({ value: (request.result as FloorPlan | undefined) ?? null, source: "cache" });
     request.onerror = () => reject(request.error);
   });
 }
 
-export async function persistFloorPlan(floorPlan: FloorPlan) {
-  if (isSupabaseConfigured()) await persistCloudFloorPlan(floorPlan);
+/** Cache only. User-triggered cloud writes live in cloudMutations.ts. */
+export async function cacheFloorPlan(floorPlan: FloorPlan) {
   const database = await openDatabase();
   return new Promise<void>((resolve, reject) => {
     const request = database.transaction(storeName, "readwrite").objectStore(storeName).put(floorPlan);
@@ -36,10 +44,35 @@ export async function deleteVenuePersistence(venueId: string) { const database =
 const read = <T,>(name: string, venueId: string) => openDatabase().then((database) => new Promise<T | null>((resolve, reject) => { const request = database.transaction(name, "readonly").objectStore(name).get(venueId); request.onsuccess = () => resolve(request.result?.value ?? null); request.onerror = () => reject(request.error); }));
 const write = <T,>(name: string, venueId: string, value: T) => openDatabase().then((database) => new Promise<void>((resolve, reject) => { const request = database.transaction(name, "readwrite").objectStore(name).put({ venueId, value }); request.onsuccess = () => resolve(); request.onerror = () => reject(request.error); }));
 export const loadVenueMachines = (venueId: string) => read<VenueMachine[]>("venue-machines", venueId);
-export const persistVenueMachines = (venueId: string, value: VenueMachine[]) => write("venue-machines", venueId, value);
-export const loadLayoutMachines = (venueId: string) => read<LayoutMachine[]>("layout-machines", venueId);
-export const loadPersistedLayoutMachines = async (venueId: string) => { if (isSupabaseConfigured()) { const cloud = await loadCloudLayoutMachines(venueId); if (cloud) return cloud; } return loadLayoutMachines(venueId); };
-export const persistLayoutMachines = async (venueId: string, value: LayoutMachine[]) => { if (isSupabaseConfigured()) await persistCloudLayoutMachines(venueId, value); await write("layout-machines", venueId, value); };
+export const cacheVenueMachines = (venueId: string, value: VenueMachine[]) => write("venue-machines", venueId, value);
+export type CachedLayoutState = { layout: Layout | null; machines: LayoutMachine[] };
+const asCachedLayoutState = (value: CachedLayoutState | LayoutMachine[] | null): CachedLayoutState => {
+  if (Array.isArray(value)) return { layout: null, machines: value };
+  return value ?? { layout: null, machines: [] };
+};
+export const loadLayoutMachines = async (venueId: string) => asCachedLayoutState(await read<CachedLayoutState | LayoutMachine[]>("layout-machines", venueId));
+export const loadPersistedLayoutMachines = async (venueId: string) => {
+  if (isSupabaseConfigured()) {
+    try {
+      const cloud = await loadCloudLayout(venueId);
+      return { value: cloud, source: "cloud" as const };
+    } catch { /* offline cache fallback only */ }
+  }
+  return { value: await loadLayoutMachines(venueId), source: "cache" as const };
+};
+export const cacheLayoutMachines = (venueId: string, value: LayoutMachine[], layout: Layout | null = null) => write("layout-machines", venueId, { layout, machines: value });
 export type PersistedGlobalState = { machines: Machine[]; venueMachines: VenueMachine[]; buffers: TransferBuffer[]; items: TransferBufferItem[]; projects?: Venue[] };
-export const loadGlobalState = async () => { try { const cloud = await loadCloudGlobal(); if (cloud) return cloud; } catch { /* local fallback */ } return read<PersistedGlobalState>("transfer-buffers", "global"); };
-export const persistGlobalState = async (value: PersistedGlobalState) => { if (isSupabaseConfigured()) await persistCloudGlobal(value); await write("transfer-buffers", "global", value); };
+export type LoadedBusinessState = { value: PersistedGlobalState; source: "cloud" | "cache" };
+export const loadGlobalState = async (): Promise<LoadedBusinessState | null> => {
+  if (isSupabaseConfigured()) {
+    try {
+      const cloud = await loadCloudGlobal();
+      if (cloud) return { value: cloud, source: "cloud" };
+      return { value: { machines: [], venueMachines: [], buffers: [], items: [], projects: [] }, source: "cloud" };
+    } catch { /* cache is read-only offline fallback */ }
+  }
+  const cached = await read<PersistedGlobalState>("transfer-buffers", "global");
+  return cached ? { value: cached, source: "cache" } : null;
+};
+/** Cache only. It must never call Supabase. */
+export const cacheGlobalState = (value: PersistedGlobalState) => write("transfer-buffers", "global", value);
