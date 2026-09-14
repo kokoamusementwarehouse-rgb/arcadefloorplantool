@@ -14,6 +14,10 @@ export function MachineConnection({ rootRef, showAll }: { rootRef: React.RefObje
     const root = rootRef.current; const canvas = root?.querySelector<HTMLElement>(".canvas-shell"); const visualViewport = root?.querySelector<HTMLElement>("[data-testid='machine-visual-viewport']");
     if (!root || !canvas || !store.floorPlan.scaleMmPerPx) { setSegments([]); return; }
     const rootRect = root.getBoundingClientRect(); const canvasRect = canvas.getBoundingClientRect(); const viewportRect = visualViewport?.getBoundingClientRect();
+    // `zoom` is the toolbar's relative view value (50%, 60%, ...). The
+    // Konva stage renders at its fitted pixel scale, so the overlay must use
+    // the exact scale that the canvas used rather than the display value.
+    const renderZoom = Number(canvas.dataset.renderZoom) || store.zoom;
     const ids = showAll ? store.layoutMachines.map((item) => item.venueMachineId) : [...new Set([store.selectedMachineId, store.hoveredVenueMachineId, store.draggingVenueMachineId].filter(Boolean) as string[])];
     const next = ids.flatMap((id): Segment[] => {
       const card = root.querySelector<HTMLElement>(`[data-venue-machine-id="${CSS.escape(id)}"]`); const layout = store.layoutMachines.find((item) => item.venueMachineId === id); const vm = store.venueMachines.find((item) => item.id === id); const machine = vm && store.machines.find((item) => item.id === vm.machineId);
@@ -21,7 +25,7 @@ export function MachineConnection({ rootRef, showAll }: { rootRef: React.RefObje
       const cardRect = card.getBoundingClientRect();
       if (viewportRect && (cardRect.bottom < viewportRect.top || cardRect.top > viewportRect.bottom)) return [];
       const preview = live.current?.venueMachineId === id ? live.current : layout; const dimensions = getEffectiveMachineDimensions(machine, vm);
-      const local = footprintScreenBounds({ ...layout, xMm: preview.xMm, yMm: preview.yMm, ...dimensions, scaleMmPerPx: store.floorPlan.scaleMmPerPx!, zoom: store.zoom, pan: store.pan, floorOffset: { x: store.floorPlan.backgroundOffsetX ?? 0, y: store.floorPlan.backgroundOffsetY ?? 0 } });
+      const local = footprintScreenBounds({ ...layout, xMm: preview.xMm, yMm: preview.yMm, ...dimensions, scaleMmPerPx: store.floorPlan.scaleMmPerPx!, zoom: renderZoom, pan: store.pan, floorOffset: { x: store.floorPlan.backgroundOffsetX ?? 0, y: store.floorPlan.backgroundOffsetY ?? 0 } });
       const footprint = { left: canvasRect.left + local.left, top: canvasRect.top + local.top, right: canvasRect.left + local.right, bottom: canvasRect.top + local.bottom };
       const anchors = nearestEdgeAnchors(footprint, cardRect);
       return [{ id, x1: anchors.from.x - rootRect.left, y1: anchors.from.y - rootRect.top, x2: anchors.to.x - rootRect.left, y2: anchors.to.y - rootRect.top, selected: id === store.selectedMachineId, hovered: id === store.hoveredVenueMachineId || id === store.draggingVenueMachineId }];
