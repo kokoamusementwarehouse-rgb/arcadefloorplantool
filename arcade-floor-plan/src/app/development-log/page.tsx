@@ -1,0 +1,44 @@
+import { AuthBoundary } from "../../components/auth/AuthBoundary";
+import { ProductNavigation } from "../../components/navigation/ProductNavigation";
+import { ThemeControl } from "../../components/theme/ThemeControl";
+
+type LogEntry = { date: string; commit: string; kind: "Feature" | "Fix" | "Platform" | "Design"; title: string; summary: string };
+
+const entries: LogEntry[] = [
+  { date: "14 Sep 2026", commit: "035df6ef", kind: "Design", title: "Dark floor-plan brightness", summary: "Added a visual-only night overlay so bright floor-plan imagery is gentler to view, without changing uploaded image files." },
+  { date: "14 Sep 2026", commit: "3088c2d0", kind: "Fix", title: "Dark list readability", summary: "Lifted contrast for machine names, codes, dimensions and placed status in the dark machine library." },
+  { date: "14 Sep 2026", commit: "b06bce97", kind: "Feature", title: "Application Dark Mode", summary: "Added Light, Dark and System choices to both product headers. Preference stays in this browser only and never writes business data." },
+  { date: "14 Sep 2026", commit: "09fdcf48", kind: "Fix", title: "In-place machine attribute updates", summary: "Condition, sale and maintenance edits now update the selected record without reloading the full Machines list or losing scroll position." },
+  { date: "14 Sep 2026", commit: "a3026f3d", kind: "Fix", title: "Sticky Machines sidebars", summary: "Kept the Machines navigation and selected-machine panel visible while the central asset list scrolls." },
+  { date: "14 Sep 2026", commit: "29b323c9", kind: "Feature", title: "Machine-name hover labels", summary: "Hovering a machine on a floor plan now reveals a readable machine name above its footprint." },
+  { date: "14 Sep 2026", commit: "864d938b", kind: "Fix", title: "Visual connection alignment", summary: "Corrected the link between the map footprint and visual-card grid after fitted zoom changes." },
+  { date: "14 Sep 2026", commit: "2ca4f6bc", kind: "Design", title: "Designer credit refinement", summary: "Refined the compact Design by Barry The Flash treatment under the KOKO Arcade brand." },
+  { date: "14 Sep 2026", commit: "32491f75", kind: "Design", title: "Designer credit added", summary: "Added the requested designer credit beneath the product logo." },
+  { date: "14 Sep 2026", commit: "07980dc2", kind: "Fix", title: "Reliable fitted map scale", summary: "Standardised fitted floor plans at 50% and corrected zoom limits so plans can be reduced after zooming in." },
+  { date: "13 Sep 2026", commit: "077769ff", kind: "Platform", title: "Cloud-first state restoration", summary: "Changed navigation restoration so Supabase is authoritative for venues, machines, layouts, images and shipments." },
+  { date: "13 Sep 2026", commit: "801dd1e3", kind: "Fix", title: "Shared top navigation", summary: "Exposed Machines alongside Floor Plans in the shared application header." },
+  { date: "13 Sep 2026", commit: "6269ac65", kind: "Feature", title: "Machine assets and shipments", summary: "Introduced physical asset management, machine condition and maintenance fields, shipment workflow, receiving and allocation." },
+  { date: "10 Sep 2026", commit: "c4cd1cf6", kind: "Fix", title: "Stale project overwrite protection", summary: "Prevented a stale browser snapshot from deleting newer shared projects or layouts." },
+  { date: "10 Sep 2026", commit: "c7cb823d", kind: "Fix", title: "Cloud image-reference protection", summary: "Protected uploaded floor-plan and machine image URLs from stale clients overwriting newer cloud values." },
+  { date: "10 Sep 2026", commit: "51509412", kind: "Fix", title: "Floor plan survives hydration", summary: "Stopped the map from disappearing after a cloud refresh or project selection while placements still existed." },
+  { date: "09 Sep 2026", commit: "f1744bca", kind: "Design", title: "Application tab icon", summary: "Set the dedicated KOKO Arcade browser-tab icon without changing the wider Hirepilot icon." },
+  { date: "08 Sep 2026", commit: "d1e02116", kind: "Fix", title: "Machine library scrolling", summary: "Kept the venue machine library independently scrollable at browser zoom levels." },
+  { date: "08 Sep 2026", commit: "f1b98dd5", kind: "Design", title: "Connection rail simplification", summary: "Removed the redundant right-hand connection rail to give the map more working space." },
+  { date: "08 Sep 2026", commit: "58aa5282", kind: "Feature", title: "Copy machine action", summary: "Added a quick duplicate action from the machine menu so a matching physical unit can be created without re-entering details." },
+  { date: "08 Sep 2026", commit: "2955a3dd", kind: "Fix", title: "Cloud deletion synchronisation", summary: "Synchronised deletions for machines, layouts and buffers so deleted records no longer reappear after realtime updates." },
+  { date: "08 Sep 2026", commit: "4513a12b", kind: "Fix", title: "Deleted machine reconciliation", summary: "Reconciled local UI state when a machine is removed in the shared cloud workspace." },
+  { date: "08 Sep 2026", commit: "351f0641", kind: "Fix", title: "Stable layout identities", summary: "Preserved machine placement identity across devices so moving a buffered machine affects only that physical machine." },
+  { date: "08 Sep 2026", commit: "9463b2a8", kind: "Platform", title: "Realtime shared tables", summary: "Enabled realtime events for the shared workspace tables used by the pilot." },
+  { date: "08 Sep 2026", commit: "782a96ab", kind: "Feature", title: "Realtime floor-plan sharing", summary: "Added shared state updates for floor plans, machines, layouts and transfer buffers across devices." },
+  { date: "08 Sep 2026", commit: "7686b8f1", kind: "Fix", title: "Authoritative cloud persistence", summary: "Made cloud persistence the source of truth instead of relying on browser IndexedDB business state." },
+  { date: "08 Sep 2026", commit: "e17e5256", kind: "Fix", title: "Project-switch map persistence", summary: "Preserved uploaded maps and saved layouts when selecting a venue in the project sidebar." },
+  { date: "08 Sep 2026", commit: "25cf173f", kind: "Fix", title: "Replace uploaded files", summary: "Allowed a floor plan or machine asset in Supabase Storage to be replaced safely." },
+  { date: "08 Sep 2026", commit: "ed6c62ad", kind: "Fix", title: "Safe cloud bootstrap", summary: "Prevented an empty cloud workspace from erasing an existing local pilot during bootstrap." },
+  { date: "07 Sep 2026", commit: "4fcd05f4", kind: "Feature", title: "Supabase image migration", summary: "Added Storage migration paths for existing machine imagery and floor-plan files." },
+  { date: "07 Sep 2026", commit: "7407fd61", kind: "Platform", title: "Supabase cloud foundation", summary: "Established cloud data and Storage persistence for the internal pilot." },
+  { date: "07 Sep 2026", commit: "25b2532d", kind: "Platform", title: "Internal-pilot deployment preparation", summary: "Prepared the arcade floor-plan tool for its first hosted internal pilot." },
+];
+
+export default function DevelopmentLogPage() {
+  return <AuthBoundary><main className="devlog-app"><header className="app-header"><div className="brand"><div className="brand-mark">K</div><span className="brand-copy"><span>KOKO <b>Arcade</b></span><small className="brand-credit"><span>Design by</span><i aria-hidden="true">ϟ</i><b>Barry The Flash</b></small></span></div><ProductNavigation /><div className="header-actions"><span className="saved-state">Project history</span><ThemeControl /></div></header><section className="devlog-shell"><header className="devlog-hero"><p>PRODUCT JOURNAL</p><h1>Development Log</h1><span>A chronological record of the pilot’s shipped features, reliability work and design refinements.</span><div className="devlog-summary"><b>{entries.length}</b><span>published updates</span><b>07 Sep — 14 Sep</b><span>current pilot window</span></div></header><div className="devlog-timeline">{entries.map((entry) => <article className="devlog-entry" key={entry.commit}><time>{entry.date}</time><div className="devlog-marker" aria-hidden="true" /><div className="devlog-card"><div><span className={`devlog-kind devlog-kind--${entry.kind.toLowerCase()}`}>{entry.kind}</span><code>{entry.commit}</code></div><h2>{entry.title}</h2><p>{entry.summary}</p></div></article>)}</div></section></main></AuthBoundary>;
+}

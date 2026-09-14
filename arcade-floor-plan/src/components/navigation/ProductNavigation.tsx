@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const links = [
   { href: "/floor-plan", label: "Floor Plans" },
   { href: "/machines", label: "Machines" },
+  { href: "/development-log", label: "Development Log" },
 ] as const;
 
 /** The shared top-level product navigation for the editor and machine registry. */
