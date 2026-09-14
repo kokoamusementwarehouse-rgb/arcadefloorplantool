@@ -80,7 +80,31 @@ export function MachineRegistry() {
     if (tab === "repairs" && unit.maintenanceStatus === "OK") return false;
     return true;
   }), [workspace, search, venueFilter, categoryFilter, tab]);
-  const updateUnit = async (id: string, patch: Parameters<typeof patchVenueMachine>[1]) => { setSaving(true); try { await patchVenueMachine(id, patch); await refresh(); } catch (cause) { setError(errorMessage(cause, "Could not update machine.")); } finally { setSaving(false); } };
+  const updateUnit = async (id: string, patch: Parameters<typeof patchVenueMachine>[1]) => {
+    const previous = workspace.units.find((unit) => unit.id === id);
+    if (!previous) return;
+    // Update only the edited physical unit immediately.  A full workspace
+    // reload clears the table while the request is in flight and loses the
+    // user's scroll position, so it is intentionally not part of this path.
+    setWorkspace((current) => ({ ...current, units: current.units.map((unit) => unit.id === id ? { ...unit, ...patch } : unit) }));
+    setSaving(true);
+    try {
+      await patchVenueMachine(id, patch);
+      setError(null);
+    } catch (cause) {
+      // Revert only fields that still hold this failed mutation. A later
+      // field-level update must never be overwritten by an older failure.
+      setWorkspace((current) => ({ ...current, units: current.units.map((unit) => {
+        if (unit.id !== id) return unit;
+        const restored = { ...unit } as Record<string, unknown>;
+        for (const [key, value] of Object.entries(patch)) if (unit[key as keyof VenueMachine] === value) restored[key] = previous[key as keyof VenueMachine];
+        return restored as unknown as VenueMachine;
+      }) }));
+      setError(errorMessage(cause, "Could not update machine."));
+    } finally {
+      setSaving(false);
+    }
+  };
   const duplicate = async (unit: VenueMachine) => {
     setSaving(true); try {
       await copyMachineAsset(unit, workspace.units); await refresh();
