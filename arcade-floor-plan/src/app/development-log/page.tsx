@@ -5,6 +5,8 @@ import { ThemeControl } from "../../components/theme/ThemeControl";
 type LogEntry = { date: string; commit: string; kind: "Feature" | "Fix" | "Platform" | "Design"; title: string; summary: string };
 
 const entries: LogEntry[] = [
+  { date: "16 Sep 2026", commit: "66eb154e", kind: "Fix", title: "Automatic machine-code gaps", summary: "New venue machines now select the first unused M-number instead of relying on the current machine count, preventing duplicate codes after transfers or deletions." },
+  { date: "14 Sep 2026", commit: "66a2a924", kind: "Feature", title: "In-app Development Log", summary: "Added this top-navigation journal so shipped features, reliability fixes and design refinements remain visible inside the product." },
   { date: "14 Sep 2026", commit: "035df6ef", kind: "Design", title: "Dark floor-plan brightness", summary: "Added a visual-only night overlay so bright floor-plan imagery is gentler to view, without changing uploaded image files." },
   { date: "14 Sep 2026", commit: "3088c2d0", kind: "Fix", title: "Dark list readability", summary: "Lifted contrast for machine names, codes, dimensions and placed status in the dark machine library." },
   { date: "14 Sep 2026", commit: "b06bce97", kind: "Feature", title: "Application Dark Mode", summary: "Added Light, Dark and System choices to both product headers. Preference stays in this browser only and never writes business data." },
