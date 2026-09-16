@@ -42,6 +42,18 @@ type CacheWriter = () => Promise<void>;
 
 const now = () => new Date().toISOString();
 
+/** Produces the first unused M-number for a venue, even when its history has gaps. */
+const nextAvailableVenueMachineCode = (items: VenueMachine[]) => {
+  const used = new Set(items.map((item) => item.machineCode.trim().toLocaleLowerCase()));
+  let sequence = 1;
+  let code = `M${String(sequence).padStart(2, "0")}`;
+  while (used.has(code.toLocaleLowerCase())) {
+    sequence += 1;
+    code = `M${String(sequence).padStart(2, "0")}`;
+  }
+  return code;
+};
+
 /** Empty is intentional in Cloud Mode. Demo/fixture records must never enter a real workspace. */
 export const createEmptyFloorPlan = (venueId: string): FloorPlan => ({
   id: `floor_plan_${venueId}`,
@@ -321,7 +333,7 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => {
         return;
       }
       const venueItems = state.venueMachines.filter((item) => item.venueId === state.venue.id);
-      const code = machineCode?.trim() || `M${String(venueItems.length + 1).padStart(2, "0")}`;
+      const code = machineCode?.trim() || nextAvailableVenueMachineCode(venueItems);
       if (venueItems.some((item) => item.machineCode.toLocaleLowerCase() === code.toLocaleLowerCase())) {
         set({ feedback: `Machine code ${code} already exists in this venue.` });
         return;
@@ -487,7 +499,7 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => {
       let unit: VenueMachine | null = null;
       if (addToVenue) {
         const existing = state.venueMachines.filter((item) => item.venueId === state.venue.id);
-        const code = machineCode?.trim() || `M${String(existing.length + 1).padStart(2, "0")}`;
+        const code = machineCode?.trim() || nextAvailableVenueMachineCode(existing);
         if (existing.some((item) => item.machineCode.toLowerCase() === code.toLowerCase())) {
           set({ feedback: `Machine code ${code} already exists in this venue.` });
           return;
