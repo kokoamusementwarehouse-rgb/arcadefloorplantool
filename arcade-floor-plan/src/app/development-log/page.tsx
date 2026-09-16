@@ -5,6 +5,7 @@ import { ThemeControl } from "../../components/theme/ThemeControl";
 type LogEntry = { date: string; commit: string; kind: "Feature" | "Fix" | "Platform" | "Design"; title: string; summary: string };
 
 const entries: LogEntry[] = [
+  { date: "16 Sep 2026", commit: "4f02a8dc", kind: "Feature", title: "Warehouse and Store Venue groups", summary: "Floor Plan projects can now be categorised as Warehouse or Store Venue when created, changed from the venue menu, or moved by dragging between the two groups. The category is stored in the shared cloud workspace." },
   { date: "16 Sep 2026", commit: "ab0200c2", kind: "Design", title: "MOREFUN Space Planner identity", summary: "Renamed the product across its application surfaces and replaced the former K mark with the new MOREFUN M app mark, while retaining the established visual language." },
   { date: "16 Sep 2026", commit: "65faad50", kind: "Fix", title: "Automatic legacy-code repair", summary: "Refined the global code migration into a deterministic SQL update: it preserves the earliest record in each duplicate group and allocates later records new sequential codes above the existing range." },
   { date: "16 Sep 2026", commit: "bff55b1a", kind: "Fix", title: "Globally unique machine codes", summary: "Machine codes now belong to one physical unit across the entire shared workspace. The accompanying cloud migration automatically keeps the oldest duplicate and renumbers later legacy duplicates safely before enforcing the database rule." },
