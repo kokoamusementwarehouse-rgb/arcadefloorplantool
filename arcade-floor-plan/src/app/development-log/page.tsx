@@ -5,6 +5,7 @@ import { ThemeControl } from "../../components/theme/ThemeControl";
 type LogEntry = { date: string; commit: string; kind: "Feature" | "Fix" | "Platform" | "Design"; title: string; summary: string };
 
 const entries: LogEntry[] = [
+  { date: "16 Sep 2026", commit: "5c553938", kind: "Feature", title: "Full Store active-machine labels", summary: "Hovering or selecting a machine image or its map footprint now reveals the full machine name in a high-contrast label." },
   { date: "16 Sep 2026", commit: "89733889", kind: "Fix", title: "Full Store connector layering", summary: "Placed the global machine-card rail above its map connectors, ensuring selected and enlarged machine previews remain clear and unobstructed." },
   { date: "16 Sep 2026", commit: "72fc5fc3", kind: "Fix", title: "Full Store transform stability", summary: "Removed transient card repositioning transforms that could compete with browser zoom measurements. Connection endpoints now continuously follow the intentional card-preview transition instead." },
   { date: "16 Sep 2026", commit: "eb413396", kind: "Fix", title: "Zoom-safe connection overlays", summary: "Bound both Floor Plan and Full Store connector overlays to their live container dimensions, eliminating line drift caused by browser zoom and responsive resizing." },
