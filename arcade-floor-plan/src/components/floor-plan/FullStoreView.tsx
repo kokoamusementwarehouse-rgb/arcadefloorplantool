@@ -3,32 +3,13 @@
 import { ArrowsInSimple, ImageSquare } from "@phosphor-icons/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
-import { assignPerimeterSide, type PerimeterSide } from "../../lib/floor-plan/connection";
+import { assignPerimeterSide, nearestEdgeAnchors, type PerimeterSide } from "../../lib/floor-plan/connection";
 import { getEffectiveMachineDimensions } from "../../lib/floor-plan/machineDimensions";
 import { clampFootprintCenterPx, pxToMm, rotatedFootprintSize } from "../../lib/floor-plan/coordinates";
 import { useFloorPlanStore } from "../../store/floorPlanStore";
 import { getMachineAppearance } from "../../lib/floor-plan/appearance";
 
 type FullLine = { id: string; x1: number; y1: number; x2: number; y2: number; selected: boolean; hovered: boolean };
-type XY = { x: number; y: number };
-const cardEdgeAnchor = (rect: DOMRect, side: PerimeterSide): XY => {
-  if (side === "left") return { x: rect.right, y: rect.top + rect.height / 2 };
-  if (side === "right") return { x: rect.left, y: rect.top + rect.height / 2 };
-  if (side === "top") return { x: rect.left + rect.width / 2, y: rect.bottom };
-  return { x: rect.left + rect.width / 2, y: rect.top };
-};
-const rotatedBoundaryAnchor = (element: HTMLElement, card: XY, hostRect: DOMRect, rotation: number): XY => {
-  const rect = element.getBoundingClientRect();
-  const center = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-  const ray = { x: card.x - center.x, y: card.y - center.y };
-  const angle = -rotation * Math.PI / 180;
-  const local = { x: ray.x * Math.cos(angle) - ray.y * Math.sin(angle), y: ray.x * Math.sin(angle) + ray.y * Math.cos(angle) };
-  const width = element.offsetWidth || rect.width; const height = element.offsetHeight || rect.height;
-  const tx = Math.abs(local.x) > 1e-6 ? (width / 2) / Math.abs(local.x) : Number.POSITIVE_INFINITY;
-  const ty = Math.abs(local.y) > 1e-6 ? (height / 2) / Math.abs(local.y) : Number.POSITIVE_INFINITY;
-  const distance = Math.min(tx, ty);
-  return { x: center.x + ray.x * distance - hostRect.left, y: center.y + ray.y * distance - hostRect.top };
-};
 
 export function FullStoreView() {
   const store = useFloorPlanStore(); const rootRef = useRef<HTMLDivElement>(null); const cardRefs = useRef(new Map<string, HTMLButtonElement>()); const previousRects = useRef(new Map<string, DOMRect>()); const animationFrame = useRef<number | null>(null); const [lines, setLines] = useState<FullLine[]>([]);
@@ -41,8 +22,8 @@ export function FullStoreView() {
     const ids = new Set(placed.map((item) => item.venueMachine.id)); sideAssignments.current.forEach((_side, id) => { if (!ids.has(id)) sideAssignments.current.delete(id); });
     result.top.sort((a,b)=>a.layout.xMm-b.layout.xMm); result.bottom.sort((a,b)=>a.layout.xMm-b.layout.xMm); result.left.sort((a,b)=>a.layout.yMm-b.layout.yMm); result.right.sort((a,b)=>a.layout.yMm-b.layout.yMm); return result;
   }, [placed, store.floorPlan.imageHeightPx, store.floorPlan.imageWidthPx, store.floorPlan.scaleMmPerPx]);
-  const calculate = useCallback(() => { const root = rootRef.current; if (!root) return; const rr = root.getBoundingClientRect(); setLines(placed.flatMap(({ layout, venueMachine }): FullLine[] => { const footprint = root.querySelector<HTMLElement>(`[data-full-footprint="${CSS.escape(venueMachine.id)}"]`); const card = root.querySelector<HTMLElement>(`[data-full-card="${CSS.escape(venueMachine.id)}"]`); if (!footprint || !card) return []; const side = sideAssignments.current.get(venueMachine.id) ?? "right"; const cardAnchor = cardEdgeAnchor(card.getBoundingClientRect(), side); const footprintAnchor = rotatedBoundaryAnchor(footprint, cardAnchor, rr, layout.rotation); return [{ id: venueMachine.id, x1: cardAnchor.x - rr.left, y1: cardAnchor.y - rr.top, x2: footprintAnchor.x, y2: footprintAnchor.y, selected: store.selectedMachineId === venueMachine.id, hovered: store.hoveredVenueMachineId === venueMachine.id }]; })); }, [placed, store.hoveredVenueMachineId, store.selectedMachineId]);
-  useEffect(() => { const root = rootRef.current; if (!root) return; let id = requestAnimationFrame(calculate); const observer = new ResizeObserver(() => { cancelAnimationFrame(id); id=requestAnimationFrame(calculate); }); observer.observe(root); root.querySelectorAll(".full-card,.full-plan").forEach((node)=>observer.observe(node)); window.addEventListener("resize", calculate); return () => { cancelAnimationFrame(id); observer.disconnect(); window.removeEventListener("resize", calculate); }; }, [calculate]);
+  const calculate = useCallback(() => { const root = rootRef.current; if (!root) return; const rr = root.getBoundingClientRect(); setLines(placed.flatMap(({ venueMachine }): FullLine[] => { const footprint = root.querySelector<HTMLElement>(`[data-full-footprint="${CSS.escape(venueMachine.id)}"]`); const card = root.querySelector<HTMLElement>(`[data-full-card="${CSS.escape(venueMachine.id)}"]`); if (!footprint || !card) return []; const cardRect = card.getBoundingClientRect(); const footprintRect = footprint.getBoundingClientRect(); const anchors = nearestEdgeAnchors(cardRect, footprintRect); return [{ id: venueMachine.id, x1: anchors.from.x - rr.left, y1: anchors.from.y - rr.top, x2: anchors.to.x - rr.left, y2: anchors.to.y - rr.top, selected: store.selectedMachineId === venueMachine.id, hovered: store.hoveredVenueMachineId === venueMachine.id }]; })); }, [placed, store.hoveredVenueMachineId, store.selectedMachineId]);
+  useEffect(() => { const root = rootRef.current; if (!root) return; let id = requestAnimationFrame(calculate); const schedule = () => { cancelAnimationFrame(id); id = requestAnimationFrame(calculate); }; const observer = new ResizeObserver(schedule); observer.observe(root); root.querySelectorAll(".full-card,.full-plan").forEach((node)=>observer.observe(node)); const viewport = window.visualViewport; window.addEventListener("resize", schedule); viewport?.addEventListener("resize", schedule); viewport?.addEventListener("scroll", schedule); return () => { cancelAnimationFrame(id); observer.disconnect(); window.removeEventListener("resize", schedule); viewport?.removeEventListener("resize", schedule); viewport?.removeEventListener("scroll", schedule); }; }, [calculate]);
   useLayoutEffect(() => { const next = new Map<string, DOMRect>(); let animating = false; cardRefs.current.forEach((node, id) => { const rect = node.getBoundingClientRect(); const previous = previousRects.current.get(id); if (previous) { const dx = previous.left - rect.left; const dy = previous.top - rect.top; if (dx || dy) { animating = true; node.style.transition = "none"; node.style.transform = `translate(${dx}px, ${dy}px)`; requestAnimationFrame(() => { node.style.transition = "transform 260ms cubic-bezier(.22,.61,.36,1)"; node.style.transform = ""; }); } } next.set(id, rect); }); previousRects.current = next; if (animationFrame.current !== null) cancelAnimationFrame(animationFrame.current); if (animating) { const started = performance.now(); const tick = (time: number) => { calculate(); if (time - started < 340) animationFrame.current = requestAnimationFrame(tick); else animationFrame.current = null; }; animationFrame.current = requestAnimationFrame(tick); } else calculate(); return () => { if (animationFrame.current !== null) { cancelAnimationFrame(animationFrame.current); animationFrame.current = null; } }; }, [calculate, sides]);
   const renderCards = (side: PerimeterSide) => <div className={`full-cards full-cards--${side}`}>{sides[side].map(({ venueMachine, machine }) => <button key={venueMachine.id} ref={(node) => { if (node) cardRefs.current.set(venueMachine.id, node); else cardRefs.current.delete(venueMachine.id); }} data-full-card={venueMachine.id} className={store.selectedMachineId === venueMachine.id ? "full-card full-card--selected" : store.hoveredVenueMachineId === venueMachine.id ? "full-card full-card--hovered" : "full-card"} onMouseEnter={() => store.setHoveredVenueMachineId(venueMachine.id)} onMouseLeave={() => store.setHoveredVenueMachineId(null)} onClick={() => store.setSelectedMachineId(venueMachine.id)}>{machine.imageUrl ? <img src={machine.imageUrl} alt=""/> : <ImageSquare size={18}/>}<span><b>{venueMachine.machineCode}</b><small>{machine.name}</small></span></button>)}</div>;
   const source = store.floorPlan.imageDataUrl ?? store.floorPlan.imageUrl;
