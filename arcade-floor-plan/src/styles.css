@@ -78,3 +78,4 @@ nav a{display:flex;align-items:center;color:#68759a;text-decoration:none;font-si
 .editor-body{grid-template-columns:var(--workspace-width,218px) var(--library-width,280px) minmax(360px,1fr) minmax(210px,248px)}
 .editor-body:has(.project-panel--collapsed){grid-template-columns:52px var(--library-width,280px) minmax(360px,1fr) minmax(210px,248px)}
 @media (max-width:1450px) and (min-width:901px){.editor-body:not(.editor-body--panels-hidden){grid-template-columns:var(--workspace-width,218px) var(--library-width,280px) minmax(360px,1fr) minmax(210px,248px)!important}.editor-body:not(.editor-body--panels-hidden):has(.project-panel--collapsed){grid-template-columns:52px var(--library-width,280px) minmax(360px,1fr) minmax(210px,248px)!important}}
+ .venue-icon{width:20px;display:inline-flex;align-items:center;justify-content:center;font-size:15px;line-height:1}

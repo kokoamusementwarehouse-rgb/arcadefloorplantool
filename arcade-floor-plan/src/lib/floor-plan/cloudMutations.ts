@@ -72,7 +72,7 @@ const venueMachineRow = (machine: VenueMachine) => ({
 });
 
 export async function createVenue(venue: Venue) {
-  const { error } = await clientOrThrow().from("venues").insert({ id: venue.id, name: venue.name, venue_type: venue.venueType ?? "store" });
+  const { error } = await clientOrThrow().from("venues").insert({ id: venue.id, name: venue.name, venue_type: venue.venueType ?? "store", icon_emoji: venue.iconEmoji ?? null });
   if (error) throw error;
 }
 
@@ -83,6 +83,11 @@ export async function renameVenue(id: string, name: string) {
 
 export async function patchVenueType(id: string, venueType: NonNullable<Venue["venueType"]>) {
   const { error } = await clientOrThrow().from("venues").update({ venue_type: venueType, updated_at: timestamp() }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function patchVenueIcon(id: string, iconEmoji: string | null) {
+  const { error } = await clientOrThrow().from("venues").update({ icon_emoji: iconEmoji, updated_at: timestamp() }).eq("id", id);
   if (error) throw error;
 }
 

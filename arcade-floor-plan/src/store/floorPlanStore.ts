@@ -19,6 +19,7 @@ import {
   moveVenueMachinesToBuffer as moveVenueMachinesToBufferInCloud,
   patchCatalogMachine as patchCatalogMachineInCloud,
   patchVenueType as patchVenueTypeInCloud,
+  patchVenueIcon as patchVenueIconInCloud,
   patchFloorPlan as patchFloorPlanInCloud,
   patchLayoutMachine as patchLayoutMachineInCloud,
   patchVenueMachine as patchVenueMachineInCloud,
@@ -123,6 +124,7 @@ interface FloorPlanState {
   addVenue: (name: string, venueType?: VenueType) => Venue | null;
   renameVenue: (id: string, name: string) => void;
   updateVenueType: (id: string, venueType: VenueType) => void;
+  updateVenueIcon: (id: string, iconEmoji: string | null) => void;
   deleteVenue: (id: string) => boolean;
   addVenueMachine: (machineId: string, machineCode?: string) => void;
 
@@ -307,7 +309,7 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => {
     addVenue: (name, venueType = "store") => {
       const clean = name.trim();
       if (!clean) return null;
-      const venue: Venue = { id: `venue_${Date.now()}_${clean.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "new"}`, name: clean, venueType };
+      const venue: Venue = { id: `venue_${Date.now()}_${clean.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "new"}`, name: clean, venueType, iconEmoji: venueType === "warehouse" ? "🏭" : "🎮" };
       set((state) => ({ projects: [...state.projects, venue], businessStateOrigin: "USER_MUTATION" }));
       get().setVenue(venue);
       enqueueUserMutation(() => createVenueInCloud(venue), [cacheGlobal], "Venue could not be saved to cloud.");
@@ -335,6 +337,18 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => {
         businessStateOrigin: "USER_MUTATION",
       }));
       enqueueUserMutation(() => patchVenueTypeInCloud(id, venueType), [cacheGlobal], "Venue type could not be saved to cloud.");
+    },
+
+    updateVenueIcon: (id, iconEmoji) => {
+      const state = get();
+      if (!state.projects.some((project) => project.id === id)) return;
+      const clean = iconEmoji?.trim().slice(0, 8) || null;
+      set((current) => ({
+        projects: current.projects.map((project) => project.id === id ? { ...project, iconEmoji: clean ?? undefined } : project),
+        venue: current.venue.id === id ? { ...current.venue, iconEmoji: clean ?? undefined } : current.venue,
+        businessStateOrigin: "USER_MUTATION",
+      }));
+      enqueueUserMutation(() => patchVenueIconInCloud(id, clean), [cacheGlobal], "Venue icon could not be saved to cloud.");
     },
 
     deleteVenue: (id) => get().deleteVenueCascade(id, { deleteUnusedCatalogModels: false }),
