@@ -42,7 +42,7 @@ type CacheWriter = () => Promise<void>;
 
 const now = () => new Date().toISOString();
 
-/** Produces the first unused M-number for a venue, even when its history has gaps. */
+/** Produces the first unused M-number across every physical machine in the workspace. */
 const nextAvailableVenueMachineCode = (items: VenueMachine[]) => {
   const used = new Set(items.map((item) => item.machineCode.trim().toLocaleLowerCase()));
   let sequence = 1;
@@ -332,10 +332,9 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => {
         set({ feedback: "That catalog machine is unavailable." });
         return;
       }
-      const venueItems = state.venueMachines.filter((item) => item.venueId === state.venue.id);
-      const code = machineCode?.trim() || nextAvailableVenueMachineCode(venueItems);
-      if (venueItems.some((item) => item.machineCode.toLocaleLowerCase() === code.toLocaleLowerCase())) {
-        set({ feedback: `Machine code ${code} already exists in this venue.` });
+      const code = machineCode?.trim() || nextAvailableVenueMachineCode(state.venueMachines);
+      if (state.venueMachines.some((item) => item.machineCode.trim().toLocaleLowerCase() === code.toLocaleLowerCase())) {
+        set({ feedback: `Machine code ${code} already exists in the shared machine list.` });
         return;
       }
       const item: VenueMachine = {
@@ -439,7 +438,7 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => {
         set({ feedback: "Choose a machine in the current venue to copy." });
         return;
       }
-      const used = new Set(state.venueMachines.filter((item) => item.venueId === state.venue.id).map((item) => item.machineCode.toLocaleLowerCase()));
+      const used = new Set(state.venueMachines.map((item) => item.machineCode.trim().toLocaleLowerCase()));
       const base = source.machineCode.replace(/-\d+$/, "");
       let suffix = 2;
       let code = `${base}-${suffix}`;
@@ -498,10 +497,9 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => {
       const machine: Machine = { ...input, id: `machine_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, createdAt: timestamp, updatedAt: timestamp };
       let unit: VenueMachine | null = null;
       if (addToVenue) {
-        const existing = state.venueMachines.filter((item) => item.venueId === state.venue.id);
-        const code = machineCode?.trim() || nextAvailableVenueMachineCode(existing);
-        if (existing.some((item) => item.machineCode.toLowerCase() === code.toLowerCase())) {
-          set({ feedback: `Machine code ${code} already exists in this venue.` });
+        const code = machineCode?.trim() || nextAvailableVenueMachineCode(state.venueMachines);
+        if (state.venueMachines.some((item) => item.machineCode.trim().toLowerCase() === code.toLowerCase())) {
+          set({ feedback: `Machine code ${code} already exists in the shared machine list.` });
           return;
         }
         unit = { id: `venue_machine_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, venueId: state.venue.id, machineId: machine.id, machineCode: code, useCustomDimensions: false, customWidthMm: null, customDepthMm: null, status: "planned", transferredAt: null, condition: "USED", forSale: false, maintenanceStatus: "OK", maintenanceNote: null, missingParts: [], receivedAt: null, createdAt: timestamp, updatedAt: timestamp };
@@ -620,8 +618,8 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => {
         set({ feedback: "Machine code cannot be empty." });
         return;
       }
-      if (state.venueMachines.some((item) => item.id !== id && item.venueId === target.venueId && item.machineCode.toLocaleLowerCase() === clean.toLocaleLowerCase())) {
-        set({ feedback: `Machine code ${clean} already exists in this venue.` });
+      if (state.venueMachines.some((item) => item.id !== id && item.machineCode.trim().toLocaleLowerCase() === clean.toLocaleLowerCase())) {
+        set({ feedback: `Machine code ${clean} already exists in the shared machine list.` });
         return;
       }
       set((current) => ({ venueMachines: current.venueMachines.map((item) => item.id === id ? { ...item, machineCode: clean, updatedAt: now() } : item), feedback: `${clean} updated.`, businessStateOrigin: "USER_MUTATION" }));
@@ -745,16 +743,18 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => {
         set({ feedback: "Transfer cancelled: an item is no longer in the Transfer Buffer." });
         return;
       }
-      const destinationCodes = new Set(state.venueMachines.filter((machine) => machine.venueId === venueId).map((machine) => machine.machineCode.toLocaleLowerCase()));
+      // A code belongs to one physical machine across the whole workspace, not a venue.
+      // This catches legacy duplicates before a transfer can make them operationally ambiguous.
+      const usedElsewhereCodes = new Set(state.venueMachines.filter((machine) => !ids.includes(machine.id)).map((machine) => machine.machineCode.trim().toLocaleLowerCase()));
       const incomingCodes = new Set<string>();
       const conflict = physical.find((machine) => {
-        const code = machine!.machineCode.toLocaleLowerCase();
-        if (destinationCodes.has(code) || incomingCodes.has(code)) return true;
+        const code = machine!.machineCode.trim().toLocaleLowerCase();
+        if (usedElsewhereCodes.has(code) || incomingCodes.has(code)) return true;
         incomingCodes.add(code);
         return false;
       });
       if (conflict) {
-        set({ feedback: `${conflict.machineCode} already exists in ${destination.name}. Transfer cancelled.` });
+        set({ feedback: `${conflict.machineCode} is already used in the shared machine list. Transfer cancelled.` });
         return;
       }
       const transferredAt = now();
