@@ -5,6 +5,7 @@ import { ThemeControl } from "../../components/theme/ThemeControl";
 type LogEntry = { date: string; commit: string; kind: "Feature" | "Fix" | "Platform" | "Design"; title: string; summary: string };
 
 const entries: LogEntry[] = [
+  { date: "16 Sep 2026", commit: "eb413396", kind: "Fix", title: "Zoom-safe connection overlays", summary: "Bound both Floor Plan and Full Store connector overlays to their live container dimensions, eliminating line drift caused by browser zoom and responsive resizing." },
   { date: "16 Sep 2026", commit: "31949f86", kind: "Fix", title: "Full Store connection stability", summary: "Rebuilt global-view connectors from the actual on-screen card and footprint boundaries, including browser zoom changes. Hovering a visual card now provides a smooth enlarged image preview." },
   { date: "16 Sep 2026", commit: "4f02a8dc", kind: "Feature", title: "Warehouse and Store Venue groups", summary: "Floor Plan projects can now be categorised as Warehouse or Store Venue when created, changed from the venue menu, or moved by dragging between the two groups. The category is stored in the shared cloud workspace." },
   { date: "16 Sep 2026", commit: "ab0200c2", kind: "Design", title: "MOREFUN Space Planner identity", summary: "Renamed the product across its application surfaces and replaced the former K mark with the new MOREFUN M app mark, while retaining the established visual language." },
