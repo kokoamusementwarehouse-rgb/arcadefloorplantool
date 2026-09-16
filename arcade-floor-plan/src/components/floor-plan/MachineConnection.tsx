@@ -9,11 +9,11 @@ import { useFloorPlanStore } from "../../store/floorPlanStore";
 type Segment = { id: string; x1: number; y1: number; x2: number; y2: number; selected: boolean; hovered: boolean };
 
 export function MachineConnection({ rootRef, showAll }: { rootRef: React.RefObject<HTMLDivElement | null>; showAll: boolean }) {
-  const store = useFloorPlanStore(); const [segments, setSegments] = useState<Segment[]>([]); const frame = useRef<number | null>(null); const live = useRef<{ venueMachineId: string; xMm: number; yMm: number } | null>(null);
+  const store = useFloorPlanStore(); const [segments, setSegments] = useState<Segment[]>([]); const [overlaySize, setOverlaySize] = useState({ width: 1, height: 1 }); const frame = useRef<number | null>(null); const live = useRef<{ venueMachineId: string; xMm: number; yMm: number } | null>(null);
   const calculate = useCallback(() => {
     const root = rootRef.current; const canvas = root?.querySelector<HTMLElement>(".canvas-shell"); const visualViewport = root?.querySelector<HTMLElement>("[data-testid='machine-visual-viewport']");
     if (!root || !canvas || !store.floorPlan.scaleMmPerPx) { setSegments([]); return; }
-    const rootRect = root.getBoundingClientRect(); const canvasRect = canvas.getBoundingClientRect(); const viewportRect = visualViewport?.getBoundingClientRect();
+    const rootRect = root.getBoundingClientRect(); const canvasRect = canvas.getBoundingClientRect(); const viewportRect = visualViewport?.getBoundingClientRect(); setOverlaySize((current) => current.width === rootRect.width && current.height === rootRect.height ? current : { width: rootRect.width, height: rootRect.height });
     // `zoom` is the toolbar's relative view value (50%, 60%, ...). The
     // Konva stage renders at its fitted pixel scale, so the overlay must use
     // the exact scale that the canvas used rather than the display value.
@@ -42,5 +42,5 @@ export function MachineConnection({ rootRef, showAll }: { rootRef: React.RefObje
     root.addEventListener("scroll", schedule, true); window.addEventListener("resize", schedule); window.addEventListener(CONNECTION_LAYOUT_EVENT, onLayout);
     return () => { observer.disconnect(); mutations.disconnect(); root.removeEventListener("scroll", schedule, true); window.removeEventListener("resize", schedule); window.removeEventListener(CONNECTION_LAYOUT_EVENT, onLayout); if (frame.current !== null) { cancelAnimationFrame(frame.current); frame.current = null; } };
   }, [rootRef, schedule]);
-  return <svg className="connection-overlay" aria-hidden="true"><g>{segments.filter((line) => !line.selected && !line.hovered).map(({id,x1,y1,x2,y2}) => <line key={id} x1={x1} y1={y1} x2={x2} y2={y2} className="connection-line connection-line--muted" />)}{segments.filter((line) => !line.selected && line.hovered).map(({id,x1,y1,x2,y2}) => <line key={id} x1={x1} y1={y1} x2={x2} y2={y2} className="connection-line connection-line--hovered" />)}{segments.filter((line) => line.selected).map(({id,x1,y1,x2,y2}) => <line key={id} x1={x1} y1={y1} x2={x2} y2={y2} className="connection-line connection-line--selected" />)}</g></svg>;
+  return <svg className="connection-overlay" aria-hidden="true" viewBox={`0 0 ${overlaySize.width} ${overlaySize.height}`} preserveAspectRatio="none"><g>{segments.filter((line) => !line.selected && !line.hovered).map(({id,x1,y1,x2,y2}) => <line key={id} x1={x1} y1={y1} x2={x2} y2={y2} className="connection-line connection-line--muted" />)}{segments.filter((line) => !line.selected && line.hovered).map(({id,x1,y1,x2,y2}) => <line key={id} x1={x1} y1={y1} x2={x2} y2={y2} className="connection-line connection-line--hovered" />)}{segments.filter((line) => line.selected).map(({id,x1,y1,x2,y2}) => <line key={id} x1={x1} y1={y1} x2={x2} y2={y2} className="connection-line connection-line--selected" />)}</g></svg>;
 }
