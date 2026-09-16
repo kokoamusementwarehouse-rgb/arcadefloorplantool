@@ -5,6 +5,7 @@ import { ThemeControl } from "../../components/theme/ThemeControl";
 type LogEntry = { date: string; commit: string; kind: "Feature" | "Fix" | "Platform" | "Design"; title: string; summary: string };
 
 const entries: LogEntry[] = [
+  { date: "16 Sep 2026", commit: "65faad50", kind: "Fix", title: "Automatic legacy-code repair", summary: "Refined the global code migration into a deterministic SQL update: it preserves the earliest record in each duplicate group and allocates later records new sequential codes above the existing range." },
   { date: "16 Sep 2026", commit: "bff55b1a", kind: "Fix", title: "Globally unique machine codes", summary: "Machine codes now belong to one physical unit across the entire shared workspace. The accompanying cloud migration automatically keeps the oldest duplicate and renumbers later legacy duplicates safely before enforcing the database rule." },
   { date: "16 Sep 2026", commit: "66eb154e", kind: "Fix", title: "Automatic machine-code gaps", summary: "New venue machines now select the first unused M-number instead of relying on the current machine count, preventing duplicate codes after transfers or deletions." },
   { date: "14 Sep 2026", commit: "66a2a924", kind: "Feature", title: "In-app Development Log", summary: "Added this top-navigation journal so shipped features, reliability fixes and design refinements remain visible inside the product." },
