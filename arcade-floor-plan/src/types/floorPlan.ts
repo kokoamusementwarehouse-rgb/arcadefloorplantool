@@ -4,7 +4,6 @@ export interface Venue {
   id: string;
   name: string;
   venueType?: VenueType;
-  iconEmoji?: string;
 }
 
 export interface FloorPlan {
