@@ -1,4 +1,10 @@
-export interface Venue { id: string; name: string; }
+export type VenueType = "warehouse" | "store";
+
+export interface Venue {
+  id: string;
+  name: string;
+  venueType?: VenueType;
+}
 
 export interface FloorPlan {
   id: string;

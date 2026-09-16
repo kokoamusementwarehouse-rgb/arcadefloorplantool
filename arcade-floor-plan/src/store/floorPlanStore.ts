@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { FloorPlan, Venue } from "../types/floorPlan";
+import type { FloorPlan, Venue, VenueType } from "../types/floorPlan";
 import type { Layout, LayoutMachine } from "../types/layout";
 import type { Machine, TransferBuffer, TransferBufferItem, VenueMachine } from "../types/machine";
 import { isSupabaseConfigured } from "../lib/supabase/client";
@@ -18,6 +18,7 @@ import {
   moveBufferItemsToVenue as moveBufferItemsToVenueInCloud,
   moveVenueMachinesToBuffer as moveVenueMachinesToBufferInCloud,
   patchCatalogMachine as patchCatalogMachineInCloud,
+  patchVenueType as patchVenueTypeInCloud,
   patchFloorPlan as patchFloorPlanInCloud,
   patchLayoutMachine as patchLayoutMachineInCloud,
   patchVenueMachine as patchVenueMachineInCloud,
@@ -119,8 +120,9 @@ interface FloorPlanState {
   setFullStoreView: (value: boolean) => void;
   setBackgroundEditing: (value: boolean) => void;
   setVenue: (venue: Venue) => void;
-  addVenue: (name: string) => Venue | null;
+  addVenue: (name: string, venueType?: VenueType) => Venue | null;
   renameVenue: (id: string, name: string) => void;
+  updateVenueType: (id: string, venueType: VenueType) => void;
   deleteVenue: (id: string) => boolean;
   addVenueMachine: (machineId: string, machineCode?: string) => void;
 
@@ -302,10 +304,10 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => {
       });
     },
 
-    addVenue: (name) => {
+    addVenue: (name, venueType = "store") => {
       const clean = name.trim();
       if (!clean) return null;
-      const venue = { id: `venue_${Date.now()}_${clean.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "new"}`, name: clean };
+      const venue: Venue = { id: `venue_${Date.now()}_${clean.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "new"}`, name: clean, venueType };
       set((state) => ({ projects: [...state.projects, venue], businessStateOrigin: "USER_MUTATION" }));
       get().setVenue(venue);
       enqueueUserMutation(() => createVenueInCloud(venue), [cacheGlobal], "Venue could not be saved to cloud.");
@@ -322,6 +324,17 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => {
         businessStateOrigin: "USER_MUTATION",
       }));
       enqueueUserMutation(() => renameVenueInCloud(id, clean), [cacheGlobal], "Venue name could not be saved to cloud.");
+    },
+
+    updateVenueType: (id, venueType) => {
+      const state = get();
+      if (!state.projects.some((project) => project.id === id)) return;
+      set((current) => ({
+        projects: current.projects.map((project) => project.id === id ? { ...project, venueType } : project),
+        venue: current.venue.id === id ? { ...current.venue, venueType } : current.venue,
+        businessStateOrigin: "USER_MUTATION",
+      }));
+      enqueueUserMutation(() => patchVenueTypeInCloud(id, venueType), [cacheGlobal], "Venue type could not be saved to cloud.");
     },
 
     deleteVenue: (id) => get().deleteVenueCascade(id, { deleteUnusedCatalogModels: false }),

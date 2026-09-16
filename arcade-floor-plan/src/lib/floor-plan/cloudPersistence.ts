@@ -8,7 +8,7 @@ const iso = (value: string) => value || new Date().toISOString();
 export async function loadCloudGlobal() {
   const client = getSupabaseClient(); if (!client) return null;
   const [venues, catalog, units, buffers, items] = await Promise.all([
-    client.from("venues").select("id,name"), client.from("catalog_machines").select("*"), client.from("venue_machines").select("*"), client.from("transfer_buffers").select("*"), client.from("transfer_buffer_items").select("*")
+    client.from("venues").select("*"), client.from("catalog_machines").select("*"), client.from("venue_machines").select("*"), client.from("transfer_buffers").select("*"), client.from("transfer_buffer_items").select("*")
   ]);
   const error = [venues, catalog, units, buffers, items].find((result) => result.error)?.error; if (error) throw error;
   // The bootstrap migration creates one empty Global staging buffer. Treat that
@@ -19,7 +19,11 @@ export async function loadCloudGlobal() {
   const imageFiles = await client.storage.from("machine-images").list("catalog", { limit: 1000 }).then((result) => result.data ?? []).catch(() => []);
   const imageByMachineId = new Map(imageFiles.filter((file) => file.name).map((file) => [file.name.replace(/\.[^.]+$/, ""), client.storage.from("machine-images").getPublicUrl(`catalog/${file.name}`).data.publicUrl]));
   return {
-    projects: (venues.data ?? []) as Venue[],
+    projects: (venues.data ?? []).map((venue) => ({
+      id: venue.id,
+      name: venue.name,
+      venueType: venue.venue_type === "warehouse" ? "warehouse" : "store",
+    })) as Venue[],
     machines: (catalog.data ?? []).map((m) => ({ id: m.id, name: m.name, category: m.category, imageUrl: m.image_url ?? imageByMachineId.get(String(m.id)) ?? null, widthMm: Number(m.width_mm), depthMm: Number(m.depth_mm), heightMm: m.height_mm == null ? undefined : Number(m.height_mm), model: m.model ?? undefined, notes: m.notes ?? undefined, footprintColor: m.footprint_color ?? undefined, footprintTextColor: m.footprint_text_color ?? undefined, createdAt: iso(m.created_at), updatedAt: iso(m.updated_at) })) as Machine[],
     venueMachines: (units.data ?? []).map((m) => ({ id: m.id, venueId: m.venue_id, machineId: m.machine_id, machineCode: m.machine_code, useCustomDimensions: m.use_custom_dimensions, customWidthMm: m.custom_width_mm == null ? null : Number(m.custom_width_mm), customDepthMm: m.custom_depth_mm == null ? null : Number(m.custom_depth_mm), status: m.status, transferredAt: m.transferred_at, condition: m.condition === "NEW" ? "NEW" : "USED", forSale: Boolean(m.for_sale), maintenanceStatus: ["OK", "NEEDS_REPAIR", "WAITING_PARTS", "UNDER_REPAIR"].includes(m.maintenance_status) ? m.maintenance_status : "OK", maintenanceNote: m.maintenance_note ?? null, missingParts: Array.isArray(m.missing_parts) ? m.missing_parts : [], receivedAt: m.received_at ?? null, createdAt: iso(m.created_at), updatedAt: iso(m.updated_at) })) as VenueMachine[],
     buffers: (buffers.data ?? []).map((b) => ({ id: b.id, name: b.name, destinationVenueId: b.destination_venue_id, createdAt: iso(b.created_at), updatedAt: iso(b.updated_at) })) as TransferBuffer[],
