@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Arcade Floor Plan",
+  title: "MOREFUN Space Planer",
   description: "Internal Pilot · Visual planning for arcade venues",
   icons: { icon: "/koko-arcade-icon.png" },
 };
