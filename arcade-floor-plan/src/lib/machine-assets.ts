@@ -134,29 +134,70 @@ export async function copyMachineAsset(unit: VenueMachine, existingUnits: VenueM
   return copy;
 }
 
-export type ShipmentDraft = { shipmentRef?: string; expectedArrivalDate?: string; status: ShipmentStatus; notes?: string; lines: Array<{ machineId: string; quantity: number }> };
+export type ShipmentDraft = {
+  shipmentRef?: string;
+  expectedArrivalDate?: string;
+  status: ShipmentStatus;
+  notes?: string;
+  /** Each shipment line creates a fresh catalog model and its physical units. */
+  lines: Array<{
+    name: string;
+    category: string;
+    widthMm: number;
+    depthMm: number;
+    heightMm?: number | null;
+    imageDataUrl?: string | null;
+    quantity: number;
+  }>;
+};
+
+async function uploadShipmentMachineImage(machineId: string, dataUrl?: string | null) {
+  if (!dataUrl?.startsWith("data:")) return null;
+  const client = clientOrThrow();
+  const mime = dataUrl.match(/^data:([^;,]+)/)?.[1] ?? "image/png";
+  const extension = mime.split("/")[1] || "png";
+  const response = await fetch(dataUrl);
+  const upload = await client.storage.from("machine-images").upload(`catalog/${machineId}.${extension}`, await response.blob(), { upsert: true, contentType: mime });
+  if (upload.error) throw upload.error;
+  return client.storage.from("machine-images").getPublicUrl(`catalog/${machineId}.${extension}`).data.publicUrl;
+}
 
 export async function createShipment(draft: ShipmentDraft, existingUnits: VenueMachine[]) {
   const client = clientOrThrow();
   const timestamp = new Date().toISOString();
   const shipmentId = `shipment_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const lines = draft.lines.filter((item) => item.name.trim() && item.category.trim() && item.widthMm > 0 && item.depthMm > 0 && item.quantity > 0);
+  if (!lines.length) throw new Error("Add at least one new machine with a name, type and dimensions.");
   const { error: shipmentError } = await client.from("shipments").insert({ id: shipmentId, shipment_ref: draft.shipmentRef?.trim() || null, expected_arrival_date: draft.expectedArrivalDate || null, status: draft.status, notes: draft.notes?.trim() || null, created_at: timestamp, updated_at: timestamp });
   if (shipmentError) throw shipmentError;
   const usedCodes = new Set(existingUnits.map((unit) => unit.machineCode.toLowerCase()));
   let sequence = Math.max(0, ...existingUnits.map((unit) => Number((unit.machineCode.match(/(\d+)$/) ?? ["", "0"])[1])));
   const units: Array<Record<string, unknown>> = [];
   const items: Array<Record<string, unknown>> = [];
-  for (const line of draft.lines.filter((item) => item.machineId && item.quantity > 0)) {
+  for (const line of lines) {
+    const machineId = `machine_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const imageUrl = await uploadShipmentMachineImage(machineId, line.imageDataUrl);
+    const { error: modelError } = await client.from("catalog_machines").insert({
+      id: machineId,
+      name: line.name.trim(),
+      category: line.category.trim(),
+      image_url: imageUrl,
+      width_mm: line.widthMm,
+      depth_mm: line.depthMm,
+      height_mm: line.heightMm && line.heightMm > 0 ? line.heightMm : null,
+      created_at: timestamp,
+      updated_at: timestamp,
+    });
+    if (modelError) throw modelError;
     for (let index = 0; index < line.quantity; index += 1) {
       let code: string;
       do { sequence += 1; code = `M${String(sequence).padStart(3, "0")}`; } while (usedCodes.has(code.toLowerCase()));
       usedCodes.add(code.toLowerCase());
       const venueMachineId = `venue_machine_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      units.push({ id: venueMachineId, venue_id: null, machine_id: line.machineId, machine_code: code, use_custom_dimensions: false, custom_width_mm: null, custom_depth_mm: null, status: "planned", transferred_at: null, condition: "NEW", for_sale: false, maintenance_status: "OK", maintenance_note: null, missing_parts: [], received_at: null, created_at: timestamp, updated_at: timestamp });
+      units.push({ id: venueMachineId, venue_id: null, machine_id: machineId, machine_code: code, use_custom_dimensions: false, custom_width_mm: null, custom_depth_mm: null, status: "planned", transferred_at: null, condition: "NEW", for_sale: false, maintenance_status: "OK", maintenance_note: null, missing_parts: [], received_at: null, created_at: timestamp, updated_at: timestamp });
       items.push({ id: `shipment_item_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, shipment_id: shipmentId, venue_machine_id: venueMachineId, created_at: timestamp });
     }
   }
-  if (!units.length) throw new Error("Add at least one machine line.");
   const { error: unitError } = await client.from("venue_machines").insert(units);
   if (unitError) throw unitError;
   const { error: itemError } = await client.from("shipment_items").insert(items);
