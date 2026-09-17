@@ -12,6 +12,16 @@ const toIso = (value?: string | null) => value || new Date().toISOString();
 const assetStatus = (value: unknown): VenueMachine["maintenanceStatus"] =>
   value === "NEEDS_REPAIR" || value === "WAITING_PARTS" || value === "UNDER_REPAIR" ? value : "OK";
 
+const shipmentCreateError = (cause: unknown) => {
+  const error = typeof cause === "object" && cause !== null ? cause as Record<string, unknown> : {};
+  return {
+    code: typeof error.code === "string" ? error.code : undefined,
+    message: typeof error.message === "string" ? error.message : cause instanceof Error ? cause.message : "Unknown shipment creation error",
+    details: typeof error.details === "string" ? error.details : undefined,
+    hint: typeof error.hint === "string" ? error.hint : undefined,
+  };
+};
+
 export type MachineAssetWorkspace = {
   venues: Venue[];
   models: Machine[];
@@ -148,6 +158,7 @@ export async function createShipment(draft: ShipmentDraft) {
     const { error } = await client.rpc("create_shipment_with_machines", { p_shipment_id: shipmentId, p_shipment_ref: draft.shipmentRef?.trim() || null, p_expected_arrival_date: draft.expectedArrivalDate || null, p_status: draft.status, p_notes: draft.notes?.trim() || null, p_lines: rpcLines });
     if (error) throw error;
   } catch (cause) {
+    console.error("[shipment-create]", shipmentCreateError(cause));
     if (uploadedPaths.length) {
       const firstCleanup = await client.storage.from("machine-images").remove(uploadedPaths);
       if (firstCleanup.error) {
