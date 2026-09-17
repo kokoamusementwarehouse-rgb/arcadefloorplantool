@@ -5,6 +5,7 @@ import { ThemeControl } from "../../components/theme/ThemeControl";
 type LogEntry = { date: string; commit: string; kind: "Feature" | "Fix" | "Platform" | "Design"; title: string; summary: string };
 
 const entries: LogEntry[] = [
+  { date: "17 Sep 2026", commit: "20e3a380", kind: "Feature", title: "New machine creation in Shipments", summary: "Shipment intake now creates new catalog models and incoming physical units with a machine image, type, dimensions and quantity. Incoming units remain unassigned and outside all Floor Plans until received and allocated." },
   { date: "16 Sep 2026", commit: "7e47b370", kind: "Fix", title: "Full Store plan clearance", summary: "Refined responsive side-rail spacing so the more compact card layout preserves a clear buffer around the floor-plan boundary." },
   { date: "16 Sep 2026", commit: "cc880833", kind: "Fix", title: "Full Store edge-safe previews", summary: "Moved side image rails closer to the plan with responsive spacing and made edge previews expand inward, keeping enlarged machines fully visible." },
   { date: "16 Sep 2026", commit: "5c553938", kind: "Feature", title: "Full Store active-machine labels", summary: "Hovering or selecting a machine image or its map footprint now reveals the full machine name in a high-contrast label." },
