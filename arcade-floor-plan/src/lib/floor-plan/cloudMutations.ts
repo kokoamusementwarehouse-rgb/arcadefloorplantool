@@ -134,9 +134,22 @@ export async function patchCatalogMachine(id: string, patch: CatalogMachinePatch
   return typeof row.image_url === "string" ? row.image_url : patch.imageUrl;
 }
 
-export async function createVenueMachine(machine: VenueMachine) {
-  const { error } = await clientOrThrow().from("venue_machines").insert(venueMachineRow(machine));
+/** Creates one physical unit. Automatic codes are allocated under the shared database lock. */
+export async function createVenueMachine(machine: VenueMachine, automaticCode = false) {
+  const { data, error } = await clientOrThrow().rpc("create_venue_machine_with_code", {
+    p_id: machine.id,
+    p_venue_id: machine.venueId,
+    p_machine_id: machine.machineId,
+    p_machine_code: automaticCode ? null : machine.machineCode.trim(),
+    p_use_custom_dimensions: machine.useCustomDimensions,
+    p_custom_width_mm: machine.customWidthMm,
+    p_custom_depth_mm: machine.customDepthMm,
+    p_condition: machine.condition,
+  });
   if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.machine_code) throw new Error("Machine code allocation returned no result.");
+  return row.machine_code as string;
 }
 
 export type VenueMachinePatch = Partial<Pick<VenueMachine, "venueId" | "machineCode" | "useCustomDimensions" | "customWidthMm" | "customDepthMm" | "status" | "transferredAt" | "condition" | "forSale" | "maintenanceStatus" | "maintenanceNote" | "missingParts" | "receivedAt">>;

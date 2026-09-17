@@ -85,53 +85,14 @@ export async function deleteMachineAsset(id: string) {
  * the Machines page has the same narrow, command-only cloud write boundary as
  * the Floor Plan editor; route hydration never calls this function.
  */
-export async function copyMachineAsset(unit: VenueMachine, existingUnits: VenueMachine[]) {
-  const used = new Set(existingUnits.map((item) => item.machineCode.toLowerCase()));
-  const base = unit.machineCode.replace(/-\d+$/, "");
-  let suffix = 2;
-  let machineCode = `${base}-${suffix}`;
-  while (used.has(machineCode.toLowerCase())) { suffix += 1; machineCode = `${base}-${suffix}`; }
-  const timestamp = new Date().toISOString();
-  const copy: VenueMachine = {
-    id: `venue_machine_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    venueId: unit.venueId,
-    machineId: unit.machineId,
-    machineCode,
-    useCustomDimensions: unit.useCustomDimensions,
-    customWidthMm: unit.customWidthMm,
-    customDepthMm: unit.customDepthMm,
-    status: "planned",
-    transferredAt: null,
-    condition: unit.condition,
-    forSale: false,
-    maintenanceStatus: "OK",
-    maintenanceNote: null,
-    missingParts: [],
-    receivedAt: null,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-  const { error } = await clientOrThrow().from("venue_machines").insert({
-    id: copy.id,
-    venue_id: copy.venueId,
-    machine_id: copy.machineId,
-    machine_code: copy.machineCode,
-    use_custom_dimensions: copy.useCustomDimensions,
-    custom_width_mm: copy.customWidthMm,
-    custom_depth_mm: copy.customDepthMm,
-    status: copy.status,
-    transferred_at: null,
-    condition: copy.condition,
-    for_sale: false,
-    maintenance_status: "OK",
-    maintenance_note: null,
-    missing_parts: [],
-    received_at: null,
-    created_at: copy.createdAt,
-    updated_at: copy.updatedAt,
+export async function copyMachineAsset(unit: VenueMachine) {
+  const id = `venue_machine_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const { error } = await clientOrThrow().rpc("copy_venue_machine_with_next_code", {
+    p_source_id: unit.id,
+    p_copy_id: id,
   });
   if (error) throw error;
-  return copy;
+  return id;
 }
 
 export type ShipmentDraft = {
@@ -139,8 +100,12 @@ export type ShipmentDraft = {
   expectedArrivalDate?: string;
   status: ShipmentStatus;
   notes?: string;
-  /** Each shipment line creates a fresh catalog model and its physical units. */
   lines: Array<{
+    kind: "existing";
+    catalogMachineId: string;
+    quantity: number;
+  } | {
+    kind: "new";
     name: string;
     category: string;
     widthMm: number;
@@ -155,53 +120,46 @@ async function uploadShipmentMachineImage(machineId: string, dataUrl?: string | 
   if (!dataUrl?.startsWith("data:")) return null;
   const client = clientOrThrow();
   const mime = dataUrl.match(/^data:([^;,]+)/)?.[1] ?? "image/png";
+  if (!new Set(["image/png", "image/jpeg", "image/webp"]).has(mime)) throw new Error("Shipment machine images must be PNG, JPG, JPEG or WebP.");
   const extension = mime.split("/")[1] || "png";
+  const path = `catalog/${machineId}.${extension}`;
   const response = await fetch(dataUrl);
-  const upload = await client.storage.from("machine-images").upload(`catalog/${machineId}.${extension}`, await response.blob(), { upsert: true, contentType: mime });
+  const upload = await client.storage.from("machine-images").upload(path, await response.blob(), { upsert: false, contentType: mime });
   if (upload.error) throw upload.error;
-  return client.storage.from("machine-images").getPublicUrl(`catalog/${machineId}.${extension}`).data.publicUrl;
+  return { path, url: client.storage.from("machine-images").getPublicUrl(path).data.publicUrl };
 }
 
-export async function createShipment(draft: ShipmentDraft, existingUnits: VenueMachine[]) {
+/** User-command boundary: image files first, then one atomic database RPC. */
+export async function createShipment(draft: ShipmentDraft) {
   const client = clientOrThrow();
-  const timestamp = new Date().toISOString();
   const shipmentId = `shipment_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  const lines = draft.lines.filter((item) => item.name.trim() && item.category.trim() && item.widthMm > 0 && item.depthMm > 0 && item.quantity > 0);
+  const lines = draft.lines.filter((item) => item.kind === "existing" ? item.catalogMachineId && item.quantity > 0 : item.name.trim() && item.category.trim() && item.widthMm > 0 && item.depthMm > 0 && item.quantity > 0);
   if (!lines.length) throw new Error("Add at least one new machine with a name, type and dimensions.");
-  const { error: shipmentError } = await client.from("shipments").insert({ id: shipmentId, shipment_ref: draft.shipmentRef?.trim() || null, expected_arrival_date: draft.expectedArrivalDate || null, status: draft.status, notes: draft.notes?.trim() || null, created_at: timestamp, updated_at: timestamp });
-  if (shipmentError) throw shipmentError;
-  const usedCodes = new Set(existingUnits.map((unit) => unit.machineCode.toLowerCase()));
-  let sequence = Math.max(0, ...existingUnits.map((unit) => Number((unit.machineCode.match(/(\d+)$/) ?? ["", "0"])[1])));
-  const units: Array<Record<string, unknown>> = [];
-  const items: Array<Record<string, unknown>> = [];
-  for (const line of lines) {
-    const machineId = `machine_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const imageUrl = await uploadShipmentMachineImage(machineId, line.imageDataUrl);
-    const { error: modelError } = await client.from("catalog_machines").insert({
-      id: machineId,
-      name: line.name.trim(),
-      category: line.category.trim(),
-      image_url: imageUrl,
-      width_mm: line.widthMm,
-      depth_mm: line.depthMm,
-      height_mm: line.heightMm && line.heightMm > 0 ? line.heightMm : null,
-      created_at: timestamp,
-      updated_at: timestamp,
-    });
-    if (modelError) throw modelError;
-    for (let index = 0; index < line.quantity; index += 1) {
-      let code: string;
-      do { sequence += 1; code = `M${String(sequence).padStart(3, "0")}`; } while (usedCodes.has(code.toLowerCase()));
-      usedCodes.add(code.toLowerCase());
-      const venueMachineId = `venue_machine_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      units.push({ id: venueMachineId, venue_id: null, machine_id: machineId, machine_code: code, use_custom_dimensions: false, custom_width_mm: null, custom_depth_mm: null, status: "planned", transferred_at: null, condition: "NEW", for_sale: false, maintenance_status: "OK", maintenance_note: null, missing_parts: [], received_at: null, created_at: timestamp, updated_at: timestamp });
-      items.push({ id: `shipment_item_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, shipment_id: shipmentId, venue_machine_id: venueMachineId, created_at: timestamp });
+  const uploadedPaths: string[] = [];
+  try {
+    const rpcLines = [];
+    for (const line of lines) {
+      if (line.kind === "existing") { rpcLines.push({ mode: "existing", catalogMachineId: line.catalogMachineId, quantity: line.quantity }); continue; }
+      const catalogMachineId = `machine_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const uploaded = await uploadShipmentMachineImage(catalogMachineId, line.imageDataUrl);
+      if (uploaded) uploadedPaths.push(uploaded.path);
+      rpcLines.push({ mode: "new", catalogMachineId, name: line.name.trim(), category: line.category.trim(), widthMm: line.widthMm, depthMm: line.depthMm, heightMm: line.heightMm && line.heightMm > 0 ? line.heightMm : null, imageUrl: uploaded?.url ?? null, quantity: line.quantity });
     }
+    const { error } = await client.rpc("create_shipment_with_machines", { p_shipment_id: shipmentId, p_shipment_ref: draft.shipmentRef?.trim() || null, p_expected_arrival_date: draft.expectedArrivalDate || null, p_status: draft.status, p_notes: draft.notes?.trim() || null, p_lines: rpcLines });
+    if (error) throw error;
+  } catch (cause) {
+    if (uploadedPaths.length) {
+      const firstCleanup = await client.storage.from("machine-images").remove(uploadedPaths);
+      if (firstCleanup.error) {
+        const retryCleanup = await client.storage.from("machine-images").remove(uploadedPaths);
+        if (retryCleanup.error) {
+          const original = cause instanceof Error ? cause.message : "Shipment transaction failed.";
+          throw new Error(`${original} Uploaded images could not be cleaned up after two attempts: ${retryCleanup.error.message}`);
+        }
+      }
+    }
+    throw cause;
   }
-  const { error: unitError } = await client.from("venue_machines").insert(units);
-  if (unitError) throw unitError;
-  const { error: itemError } = await client.from("shipment_items").insert(items);
-  if (itemError) throw itemError;
 }
 
 export async function patchShipment(id: string, patch: Partial<Pick<Shipment, "shipmentRef" | "expectedArrivalDate" | "status" | "notes">>) {

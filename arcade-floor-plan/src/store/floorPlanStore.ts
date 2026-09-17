@@ -43,18 +43,6 @@ type CacheWriter = () => Promise<void>;
 
 const now = () => new Date().toISOString();
 
-/** Produces the first unused M-number across every physical machine in the workspace. */
-const nextAvailableVenueMachineCode = (items: VenueMachine[]) => {
-  const used = new Set(items.map((item) => item.machineCode.trim().toLocaleLowerCase()));
-  let sequence = 1;
-  let code = `M${String(sequence).padStart(2, "0")}`;
-  while (used.has(code.toLocaleLowerCase())) {
-    sequence += 1;
-    code = `M${String(sequence).padStart(2, "0")}`;
-  }
-  return code;
-};
-
 /** Empty is intentional in Cloud Mode. Demo/fixture records must never enter a real workspace. */
 export const createEmptyFloorPlan = (venueId: string): FloorPlan => ({
   id: `floor_plan_${venueId}`,
@@ -346,16 +334,16 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => {
         set({ feedback: "That catalog machine is unavailable." });
         return;
       }
-      const code = machineCode?.trim() || nextAvailableVenueMachineCode(state.venueMachines);
-      if (state.venueMachines.some((item) => item.machineCode.trim().toLocaleLowerCase() === code.toLocaleLowerCase())) {
-        set({ feedback: `Machine code ${code} already exists in the shared machine list.` });
+      const explicitCode = machineCode?.trim();
+      if (explicitCode && state.venueMachines.some((item) => item.machineCode.trim().toLocaleLowerCase() === explicitCode.toLocaleLowerCase())) {
+        set({ feedback: `Machine code ${explicitCode} already exists in the shared machine list.` });
         return;
       }
       const item: VenueMachine = {
         id: `venue_machine_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         venueId: state.venue.id,
         machineId,
-        machineCode: code,
+        machineCode: explicitCode || "ALLOCATING…",
         useCustomDimensions: false,
         customWidthMm: null,
         customDepthMm: null,
@@ -370,8 +358,8 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => {
         createdAt: now(),
         updatedAt: now(),
       };
-      set((current) => ({ venueMachines: [...current.venueMachines, item], selectedMachineId: item.id, feedback: `${item.machineCode} added. Drag it onto the calibrated plan.`, businessStateOrigin: "USER_MUTATION" }));
-      enqueueUserMutation(() => createVenueMachineInCloud(item), [cacheGlobal], "Machine could not be saved to cloud.");
+      set((current) => ({ venueMachines: [...current.venueMachines, item], selectedMachineId: item.id, feedback: explicitCode ? `${item.machineCode} added. Drag it onto the calibrated plan.` : "Allocating a global machine code…", businessStateOrigin: "USER_MUTATION" }));
+      enqueueUserMutation(() => createVenueMachineInCloud(item, !explicitCode), [cacheGlobal], "Machine could not be saved to cloud.", (assignedCode) => set((current) => ({ venueMachines: current.venueMachines.map((entry) => entry.id === item.id ? { ...entry, machineCode: assignedCode } : entry), feedback: `${assignedCode} added. Drag it onto the calibrated plan.` })));
     },
 
     setFloorPlan: (floorPlan, origin = "CLOUD_HYDRATION") => set({ floorPlan, businessStateOrigin: origin }),
@@ -452,15 +440,10 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => {
         set({ feedback: "Choose a machine in the current venue to copy." });
         return;
       }
-      const used = new Set(state.venueMachines.map((item) => item.machineCode.trim().toLocaleLowerCase()));
-      const base = source.machineCode.replace(/-\d+$/, "");
-      let suffix = 2;
-      let code = `${base}-${suffix}`;
-      while (used.has(code.toLocaleLowerCase())) { suffix += 1; code = `${base}-${suffix}`; }
       const timestamp = now();
-      const copy: VenueMachine = { ...source, id: `venue_machine_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, machineCode: code, status: "planned", transferredAt: null, createdAt: timestamp, updatedAt: timestamp };
-      set((current) => ({ venueMachines: [...current.venueMachines, copy], selectedMachineId: copy.id, selectedVenueMachineIds: [], feedback: `${current.machines.find((machine) => machine.id === source.machineId)?.name ?? "Machine"} copied as ${code}.`, businessStateOrigin: "USER_MUTATION" }));
-      enqueueUserMutation(() => createVenueMachineInCloud(copy), [cacheGlobal], "Machine copy could not be saved to cloud.");
+      const copy: VenueMachine = { ...source, id: `venue_machine_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, machineCode: "ALLOCATING…", status: "planned", transferredAt: null, createdAt: timestamp, updatedAt: timestamp };
+      set((current) => ({ venueMachines: [...current.venueMachines, copy], selectedMachineId: copy.id, selectedVenueMachineIds: [], feedback: "Allocating a global machine code…", businessStateOrigin: "USER_MUTATION" }));
+      enqueueUserMutation(() => createVenueMachineInCloud(copy, true), [cacheGlobal], "Machine copy could not be saved to cloud.", (assignedCode) => set((current) => ({ venueMachines: current.venueMachines.map((entry) => entry.id === copy.id ? { ...entry, machineCode: assignedCode } : entry), feedback: `${current.machines.find((machine) => machine.id === source.machineId)?.name ?? "Machine"} copied as ${assignedCode}.` })));
     },
 
     deleteVenueCascade: (venueId, options) => {
@@ -511,25 +494,28 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => {
       const machine: Machine = { ...input, id: `machine_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, createdAt: timestamp, updatedAt: timestamp };
       let unit: VenueMachine | null = null;
       if (addToVenue) {
-        const code = machineCode?.trim() || nextAvailableVenueMachineCode(state.venueMachines);
-        if (state.venueMachines.some((item) => item.machineCode.trim().toLowerCase() === code.toLowerCase())) {
-          set({ feedback: `Machine code ${code} already exists in the shared machine list.` });
+        const explicitCode = machineCode?.trim();
+        if (explicitCode && state.venueMachines.some((item) => item.machineCode.trim().toLowerCase() === explicitCode.toLowerCase())) {
+          set({ feedback: `Machine code ${explicitCode} already exists in the shared machine list.` });
           return;
         }
-        unit = { id: `venue_machine_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, venueId: state.venue.id, machineId: machine.id, machineCode: code, useCustomDimensions: false, customWidthMm: null, customDepthMm: null, status: "planned", transferredAt: null, condition: "USED", forSale: false, maintenanceStatus: "OK", maintenanceNote: null, missingParts: [], receivedAt: null, createdAt: timestamp, updatedAt: timestamp };
+        unit = { id: `venue_machine_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, venueId: state.venue.id, machineId: machine.id, machineCode: explicitCode || "ALLOCATING…", useCustomDimensions: false, customWidthMm: null, customDepthMm: null, status: "planned", transferredAt: null, condition: "USED", forSale: false, maintenanceStatus: "OK", maintenanceNote: null, missingParts: [], receivedAt: null, createdAt: timestamp, updatedAt: timestamp };
       }
       set((current) => ({ machines: [...current.machines, machine], venueMachines: unit ? [...current.venueMachines, unit] : current.venueMachines, selectedMachineId: unit?.id ?? current.selectedMachineId, feedback: unit ? `${unit.machineCode} added to ${current.venue.name} as Unplaced.` : `${machine.name} saved to Machine Catalog.`, businessStateOrigin: "USER_MUTATION" }));
       enqueueUserMutation(
         async () => {
           const uploadedUrl = await createCatalogMachineInCloud(machine);
-          if (unit) await createVenueMachineInCloud(unit);
-          return uploadedUrl;
+          const assignedCode = unit ? await createVenueMachineInCloud(unit, !machineCode?.trim()) : null;
+          return { uploadedUrl, assignedCode };
         },
         [cacheGlobal],
         "Machine could not be saved to cloud.",
-        (uploadedUrl) => {
-          if (!uploadedUrl || uploadedUrl === machine.imageUrl) return;
-          set((current) => ({ machines: current.machines.map((item) => item.id === machine.id ? { ...item, imageUrl: uploadedUrl } : item) }));
+        ({ uploadedUrl, assignedCode }) => {
+          set((current) => ({
+            machines: !uploadedUrl || uploadedUrl === machine.imageUrl ? current.machines : current.machines.map((item) => item.id === machine.id ? { ...item, imageUrl: uploadedUrl } : item),
+            venueMachines: unit && assignedCode ? current.venueMachines.map((item) => item.id === unit.id ? { ...item, machineCode: assignedCode } : item) : current.venueMachines,
+            feedback: unit && assignedCode ? `${assignedCode} added to ${current.venue.name} as Unplaced.` : current.feedback,
+          }));
         },
       );
     },
