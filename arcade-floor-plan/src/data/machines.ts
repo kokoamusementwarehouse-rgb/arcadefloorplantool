@@ -25,7 +25,8 @@ const operationalVenueMachines: VenueMachine[] = [
   ["PAB-T01", "play_a_ball", "venue_koko_rhodes"],
 ].map(([machineCode, machineId, venueId]) => ({
   id: `venue_machine_${machineCode}`, venueId: String(venueId ?? "venue_koko_rhodes"), machineId: `machine_${machineId}`,
-  machineCode: String(machineCode), useCustomDimensions: false, customWidthMm: null, customDepthMm: null, status: "active" as const, createdAt: timestamp, updatedAt: timestamp,
+  machineCode: String(machineCode), useCustomDimensions: false, customWidthMm: null, customDepthMm: null, status: "active" as const,
+  condition: "USED" as const, forSale: false, maintenanceStatus: "OK" as const, missingParts: [], createdAt: timestamp, updatedAt: timestamp,
 }));
 
 const qaModels = ["mini-claw", "double-claw", "racing", "shooting", "basketball", "kids-ride", "play_a_ball"];
@@ -38,6 +39,10 @@ const qaVenueMachines: VenueMachine[] = Array.from({ length: 50 }, (_, index) =>
   customWidthMm: null,
   customDepthMm: null,
   status: "active",
+  condition: "USED",
+  forSale: false,
+  maintenanceStatus: "OK",
+  missingParts: [],
   createdAt: timestamp,
   updatedAt: timestamp,
 }));

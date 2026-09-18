@@ -5,6 +5,7 @@ import { ThemeControl } from "../../components/theme/ThemeControl";
 type LogEntry = { date: string; commit: string; kind: "Feature" | "Fix" | "Platform" | "Design"; title: string; summary: string };
 
 const entries: LogEntry[] = [
+  { date: "18 Sep 2026", commit: "release", kind: "Fix", title: "Canonical shipment status values", summary: "Aligned Shipment status controls with the database contract. User-facing labels remain readable while RPC values always use ORDERED, IN_PRODUCTION, IN_SHIPMENT, ARRIVED or CLOSED." },
   { date: "17 Sep 2026", commit: "release", kind: "Fix", title: "Shipment failure diagnostics", summary: "Shipment creation now logs the structured database code, message, details and hint for development diagnosis while keeping the on-screen failure message concise." },
   { date: "17 Sep 2026", commit: "release", kind: "Fix", title: "Transactional shipment creation and global codes", summary: "Shipment creation now commits its shipment, catalog models, physical units and line items atomically. Automatic physical-machine codes are allocated under one shared database lock across Shipments, copies and Floor Plan additions." },
   { date: "17 Sep 2026", commit: "20e3a380", kind: "Feature", title: "New machine creation in Shipments", summary: "Shipment intake now creates new catalog models and incoming physical units with a machine image, type, dimensions and quantity. Incoming units remain unassigned and outside all Floor Plans until received and allocated." },

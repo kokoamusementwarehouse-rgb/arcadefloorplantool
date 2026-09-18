@@ -80,6 +80,9 @@ test("Machines page is cloud-read-only on mount and shipment creation uses locke
     assert.match(machineRegistry, new RegExp(`table: "${table}"`));
   }
   assert.match(machineAssets, /rpc\("create_shipment_with_machines"/);
+  assert.match(machineRegistry, /SHIPMENT_STATUSES/);
+  assert.match(machineRegistry, /<option key=\{item\} value=\{item\}>\{shipmentStatusLabel\(item\)\}<\/option>/);
+  assert.match(migration, /p_status not in \('ORDERED', 'IN_PRODUCTION', 'IN_SHIPMENT', 'ARRIVED', 'CLOSED'\)/);
   assert.match(machineAssets, /rpc\("copy_venue_machine_with_next_code"/);
   assert.match(cloudMutations, /rpc\("create_venue_machine_with_code"/);
   assert.doesNotMatch(machineAssets, /from\("shipments"\)\.insert/);

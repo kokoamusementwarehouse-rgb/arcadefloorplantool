@@ -41,7 +41,17 @@ export interface VenueMachine {
 }
 
 export interface MissingPart { id: string; name: string; quantity: number; note?: string; }
-export type ShipmentStatus = "ORDERED" | "IN_PRODUCTION" | "IN_SHIPMENT" | "ARRIVED" | "CLOSED";
+/** Persistence/API contract — never use display labels as values. */
+export const SHIPMENT_STATUSES = ["ORDERED", "IN_PRODUCTION", "IN_SHIPMENT", "ARRIVED", "CLOSED"] as const;
+export type ShipmentStatus = typeof SHIPMENT_STATUSES[number];
+export const SHIPMENT_STATUS_LABELS: Record<ShipmentStatus, string> = {
+  ORDERED: "Ordered",
+  IN_PRODUCTION: "In Production",
+  IN_SHIPMENT: "In Shipment",
+  ARRIVED: "Arrived",
+  CLOSED: "Closed",
+};
+export const shipmentStatusLabel = (status: ShipmentStatus) => SHIPMENT_STATUS_LABELS[status];
 export interface Shipment { id: string; shipmentRef?: string | null; expectedArrivalDate?: string | null; status: ShipmentStatus; notes?: string | null; createdAt: string; updatedAt: string; }
 export interface ShipmentItem { id: string; shipmentId: string; venueMachineId: string; createdAt: string; }
 
