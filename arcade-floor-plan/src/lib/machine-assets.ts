@@ -126,7 +126,39 @@ export type ShipmentDraft = {
   }>;
 };
 
-async function uploadShipmentMachineImage(machineId: string, dataUrl?: string | null) {
+export type ShipmentCreateStage = "preparing" | "uploading" | "creating" | "completed";
+export type ShipmentCreateProgress = { stage: ShipmentCreateStage; attempt?: number; totalAttempts?: number };
+export type ShipmentCreateOptions = {
+  signal?: AbortSignal;
+  skipImages?: boolean;
+  onProgress?: (progress: ShipmentCreateProgress) => void;
+};
+
+export class ShipmentImageUploadError extends Error {
+  readonly kind = "image-upload" as const;
+  constructor(message = "Image upload failed.") { super(message); this.name = "ShipmentImageUploadError"; }
+}
+
+class ShipmentUploadTimeoutError extends Error {
+  constructor() { super("Image upload timed out."); this.name = "ShipmentUploadTimeoutError"; }
+}
+
+const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
+  if (signal?.aborted) { reject(new DOMException("The operation was aborted.", "AbortError")); return; }
+  const timer = setTimeout(resolve, ms);
+  signal?.addEventListener("abort", () => { clearTimeout(timer); reject(new DOMException("The operation was aborted.", "AbortError")); }, { once: true });
+});
+
+const withUploadTimeout = async <T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let abort: (() => void) | undefined;
+  const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new ShipmentUploadTimeoutError()), 20_000); });
+  const cancelled = signal ? new Promise<never>((_, reject) => { abort = () => reject(new DOMException("The operation was aborted.", "AbortError")); if (signal.aborted) abort(); else signal.addEventListener("abort", abort, { once: true }); }) : null;
+  try { return await Promise.race([promise, timeout, ...(cancelled ? [cancelled] : [])]); }
+  finally { if (timer) clearTimeout(timer); if (abort) signal?.removeEventListener("abort", abort); }
+};
+
+async function uploadShipmentMachineImage(machineId: string, dataUrl: string | null | undefined, options: ShipmentCreateOptions) {
   if (!dataUrl?.startsWith("data:")) return null;
   const client = clientOrThrow();
   const mime = dataUrl.match(/^data:([^;,]+)/)?.[1] ?? "image/png";
@@ -137,36 +169,44 @@ async function uploadShipmentMachineImage(machineId: string, dataUrl?: string | 
   const blob = await response.blob();
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const upload = await client.storage.from("machine-images").upload(path, blob, { upsert: true, contentType: mime });
+    options.onProgress?.({ stage: "uploading", attempt: attempt + 1, totalAttempts: 3 });
+    const upload = await withUploadTimeout(client.storage.from("machine-images").upload(path, blob, { upsert: true, contentType: mime }), options.signal);
     if (!upload.error) return { path, url: client.storage.from("machine-images").getPublicUrl(path).data.publicUrl };
     lastError = upload.error;
     const status = Number((upload.error as { statusCode?: unknown }).statusCode);
     const message = String((upload.error as { message?: unknown }).message ?? "");
     const retryable = status === 408 || status === 429 || status >= 500 || /timeout|network|520/i.test(message);
     if (!retryable || attempt === 2) break;
-    await new Promise((resolve) => setTimeout(resolve, 300 * 2 ** attempt));
+    await sleep(300 * 2 ** attempt, options.signal);
   }
-  throw lastError;
+  throw lastError ?? new Error("Image upload failed.");
 }
 
 /** User-command boundary: image files first, then one atomic database RPC. */
-export async function createShipment(draft: ShipmentDraft) {
+export async function createShipment(draft: ShipmentDraft, options: ShipmentCreateOptions = {}) {
   const client = clientOrThrow();
   const shipmentId = `shipment_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const lines = draft.lines.filter((item) => item.kind === "existing" ? item.catalogMachineId && item.quantity > 0 : item.name.trim() && item.category.trim() && item.widthMm > 0 && item.depthMm > 0 && item.quantity > 0);
   if (!lines.length) throw new Error("Add at least one new machine with a name, type and dimensions.");
   const uploadedPaths: string[] = [];
   try {
+    options.onProgress?.({ stage: "preparing" });
     const rpcLines = [];
     for (const line of lines) {
       if (line.kind === "existing") { rpcLines.push({ mode: "existing", catalogMachineId: line.catalogMachineId, quantity: line.quantity }); continue; }
       const catalogMachineId = `machine_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const uploaded = await uploadShipmentMachineImage(catalogMachineId, line.imageDataUrl);
+      let uploaded: { path: string; url: string } | null = null;
+      if (!options.skipImages && line.imageDataUrl) {
+        try { uploaded = await uploadShipmentMachineImage(catalogMachineId, line.imageDataUrl, options); }
+        catch (cause) { throw new ShipmentImageUploadError(cause instanceof Error ? cause.message : "Image upload failed."); }
+      }
       if (uploaded) uploadedPaths.push(uploaded.path);
       rpcLines.push({ mode: "new", catalogMachineId, name: line.name.trim(), category: line.category.trim(), widthMm: line.widthMm, depthMm: line.depthMm, heightMm: line.heightMm && line.heightMm > 0 ? line.heightMm : null, imageUrl: uploaded?.url ?? null, quantity: line.quantity });
     }
+    options.onProgress?.({ stage: "creating" });
     const { error } = await client.rpc("create_shipment_with_machines", { p_shipment_id: shipmentId, p_shipment_ref: draft.shipmentRef?.trim() || null, p_expected_arrival_date: draft.expectedArrivalDate || null, p_status: draft.status, p_notes: draft.notes?.trim() || null, p_lines: rpcLines });
     if (error) throw error;
+    options.onProgress?.({ stage: "completed" });
   } catch (cause) {
     console.error("[shipment-create]", shipmentCreateError(cause));
     if (uploadedPaths.length) {

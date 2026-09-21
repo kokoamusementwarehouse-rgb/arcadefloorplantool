@@ -91,6 +91,12 @@ test("Machines page is cloud-read-only on mount and shipment creation uses locke
   assert.match(machineAssets, /remove\(uploadedPaths\)/);
   assert.match(machineAssets, /upsert: true/);
   assert.match(machineAssets, /attempt < 3/);
+  assert.match(machineAssets, /ShipmentCreateStage/);
+  assert.match(machineAssets, /withUploadTimeout/);
+  assert.match(machineAssets, /skipImages/);
+  assert.match(machineRegistry, /Attempt \$\{uploadAttempt\} of 3/);
+  assert.match(machineRegistry, /Continue without image/);
+  assert.match(machineRegistry, /if \(busy\) return/);
   assert.match(migration, /pg_advisory_xact_lock\(80421655\)/);
   assert.match(migration, /venue_id, machine_id, machine_code/);
   assert.match(migration, /null, catalog_id, code/);
