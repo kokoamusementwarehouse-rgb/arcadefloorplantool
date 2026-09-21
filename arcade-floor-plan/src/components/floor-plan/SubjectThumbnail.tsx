@@ -15,6 +15,10 @@ const trimSubject = (source: string): Promise<TrimmedImage> => new Promise((reso
       if (!context || !canvas.width || !canvas.height) { resolve({ src: source, trimmed: false }); return; }
       context.drawImage(image, 0, 0);
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      const cornerPoints = [[0, 0], [canvas.width - 1, 0], [0, canvas.height - 1], [canvas.width - 1, canvas.height - 1]];
+      const cornerColors = cornerPoints.map(([x, y]) => { const offset = (y * canvas.width + x) * 4; return [pixels[offset], pixels[offset + 1], pixels[offset + 2], pixels[offset + 3]]; });
+      const background = cornerColors.reduce((sum, color) => [sum[0] + color[0] / 4, sum[1] + color[1] / 4, sum[2] + color[2] / 4], [0, 0, 0]);
+      const backgroundUniform = cornerColors.every((color) => Math.max(Math.abs(color[0] - background[0]), Math.abs(color[1] - background[1]), Math.abs(color[2] - background[2])) < 24);
       let left = canvas.width, top = canvas.height, right = -1, bottom = -1;
       for (let y = 0; y < canvas.height; y += 1) {
         for (let x = 0; x < canvas.width; x += 1) {
@@ -26,7 +30,8 @@ const trimSubject = (source: string): Promise<TrimmedImage> => new Promise((reso
           // Transparent pixels and near-white pixels are the common exported
           // margins. Keeping the test conservative avoids trimming white
           // marquee/control details inside the actual subject.
-          const margin = alpha < 18 || (red > 247 && green > 247 && blue > 247);
+          const closeToEdgeBackground = backgroundUniform && Math.max(Math.abs(red - background[0]), Math.abs(green - background[1]), Math.abs(blue - background[2])) < 18;
+          const margin = alpha < 18 || (red > 247 && green > 247 && blue > 247) || closeToEdgeBackground;
           if (!margin) {
             left = Math.min(left, x); top = Math.min(top, y);
             right = Math.max(right, x); bottom = Math.max(bottom, y);
