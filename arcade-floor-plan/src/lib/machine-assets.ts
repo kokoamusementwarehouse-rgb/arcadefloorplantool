@@ -134,9 +134,19 @@ async function uploadShipmentMachineImage(machineId: string, dataUrl?: string | 
   const extension = mime.split("/")[1] || "png";
   const path = `catalog/${machineId}.${extension}`;
   const response = await fetch(dataUrl);
-  const upload = await client.storage.from("machine-images").upload(path, await response.blob(), { upsert: false, contentType: mime });
-  if (upload.error) throw upload.error;
-  return { path, url: client.storage.from("machine-images").getPublicUrl(path).data.publicUrl };
+  const blob = await response.blob();
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const upload = await client.storage.from("machine-images").upload(path, blob, { upsert: true, contentType: mime });
+    if (!upload.error) return { path, url: client.storage.from("machine-images").getPublicUrl(path).data.publicUrl };
+    lastError = upload.error;
+    const status = Number((upload.error as { statusCode?: unknown }).statusCode);
+    const message = String((upload.error as { message?: unknown }).message ?? "");
+    const retryable = status === 408 || status === 429 || status >= 500 || /timeout|network|520/i.test(message);
+    if (!retryable || attempt === 2) break;
+    await new Promise((resolve) => setTimeout(resolve, 300 * 2 ** attempt));
+  }
+  throw lastError;
 }
 
 /** User-command boundary: image files first, then one atomic database RPC. */

@@ -89,6 +89,8 @@ test("Machines page is cloud-read-only on mount and shipment creation uses locke
   assert.doesNotMatch(machineAssets, /from\("venue_machines"\)\.insert/);
   assert.doesNotMatch(floorPlanStore, /nextAvailableVenueMachineCode/);
   assert.match(machineAssets, /remove\(uploadedPaths\)/);
+  assert.match(machineAssets, /upsert: true/);
+  assert.match(machineAssets, /attempt < 3/);
   assert.match(migration, /pg_advisory_xact_lock\(80421655\)/);
   assert.match(migration, /venue_id, machine_id, machine_code/);
   assert.match(migration, /null, catalog_id, code/);
