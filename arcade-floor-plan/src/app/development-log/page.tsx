@@ -5,6 +5,7 @@ import { ThemeControl } from "../../components/theme/ThemeControl";
 type LogEntry = { date: string; commit: string; kind: "Feature" | "Fix" | "Platform" | "Design"; title: string; summary: string };
 
 const entries: LogEntry[] = [
+  { date: "21 Sep 2026", commit: "release", kind: "Fix", title: "Visual Panel subject framing", summary: "Visual machine cards now trim transparent or white source margins before rendering, then use a taller adaptive viewport so the complete machine remains visible while the subject fills the card more clearly." },
   { date: "21 Sep 2026", commit: "release", kind: "Fix", title: "Resilient shipment image upload", summary: "Shipment creation now shows bounded Preparing, Uploading image and Creating shipment stages, retries only transient Storage failures, and offers Retry, Continue without image or Cancel instead of leaving the modal frozen." },
   { date: "18 Sep 2026", commit: "release", kind: "Fix", title: "Canonical shipment status values", summary: "Aligned Shipment status controls with the database contract. User-facing labels remain readable while RPC values always use ORDERED, IN_PRODUCTION, IN_SHIPMENT, ARRIVED or CLOSED." },
   { date: "17 Sep 2026", commit: "release", kind: "Fix", title: "Shipment failure diagnostics", summary: "Shipment creation now logs the structured database code, message, details and hint for development diagnosis while keeping the on-screen failure message concise." },
