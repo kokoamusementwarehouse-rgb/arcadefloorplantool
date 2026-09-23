@@ -103,3 +103,14 @@ test("Machines page is cloud-read-only on mount and shipment creation uses locke
   assert.match(migration, /create_venue_machine_with_code/);
   assert.match(migration, /pilot_machine_images_delete/);
 });
+
+test("catalog image removal is authoritative and cannot resurrect old Storage files", async () => {
+  const [persistence, mutations] = await Promise.all([
+    source("../src/lib/floor-plan/cloudPersistence.ts"),
+    source("../src/lib/floor-plan/cloudMutations.ts"),
+  ]);
+  assert.match(persistence, /imageUrl: m\.image_url \?\? null/);
+  assert.doesNotMatch(persistence, /imageByMachineId/);
+  assert.match(mutations, /removeCatalogImages\(id, uploadedExtension\)/);
+  assert.match(mutations, /catalogImagePaths/);
+});

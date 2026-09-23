@@ -16,15 +16,15 @@ export async function loadCloudGlobal() {
   // IndexedDB workspace during first-load migration.
   const meaningfulBuffers = (buffers.data ?? []).filter((buffer) => buffer.name !== "Global staging" || (items.data ?? []).some((item) => item.transfer_buffer_id === buffer.id));
   if (!venues.data?.length && !catalog.data?.length && !units.data?.length && !meaningfulBuffers.length && !items.data?.length) return null;
-  const imageFiles = await client.storage.from("machine-images").list("catalog", { limit: 1000 }).then((result) => result.data ?? []).catch(() => []);
-  const imageByMachineId = new Map(imageFiles.filter((file) => file.name).map((file) => [file.name.replace(/\.[^.]+$/, ""), client.storage.from("machine-images").getPublicUrl(`catalog/${file.name}`).data.publicUrl]));
   return {
     projects: (venues.data ?? []).map((venue) => ({
       id: venue.id,
       name: venue.name,
       venueType: venue.venue_type === "warehouse" ? "warehouse" : "store",
     })) as Venue[],
-    machines: (catalog.data ?? []).map((m) => ({ id: m.id, name: m.name, category: m.category, imageUrl: m.image_url ?? imageByMachineId.get(String(m.id)) ?? null, widthMm: Number(m.width_mm), depthMm: Number(m.depth_mm), heightMm: m.height_mm == null ? undefined : Number(m.height_mm), model: m.model ?? undefined, notes: m.notes ?? undefined, footprintColor: m.footprint_color ?? undefined, footprintTextColor: m.footprint_text_color ?? undefined, createdAt: iso(m.created_at), updatedAt: iso(m.updated_at) })) as Machine[],
+    // `null` is an intentional, user-authored removal. Never resurrect an
+    // old Storage object when the authoritative catalog row says no image.
+    machines: (catalog.data ?? []).map((m) => ({ id: m.id, name: m.name, category: m.category, imageUrl: m.image_url ?? null, widthMm: Number(m.width_mm), depthMm: Number(m.depth_mm), heightMm: m.height_mm == null ? undefined : Number(m.height_mm), model: m.model ?? undefined, notes: m.notes ?? undefined, footprintColor: m.footprint_color ?? undefined, footprintTextColor: m.footprint_text_color ?? undefined, createdAt: iso(m.created_at), updatedAt: iso(m.updated_at) })) as Machine[],
     venueMachines: (units.data ?? []).map((m) => ({ id: m.id, venueId: m.venue_id, machineId: m.machine_id, machineCode: m.machine_code, useCustomDimensions: m.use_custom_dimensions, customWidthMm: m.custom_width_mm == null ? null : Number(m.custom_width_mm), customDepthMm: m.custom_depth_mm == null ? null : Number(m.custom_depth_mm), status: m.status, transferredAt: m.transferred_at, condition: m.condition === "NEW" ? "NEW" : "USED", forSale: Boolean(m.for_sale), maintenanceStatus: ["OK", "NEEDS_REPAIR", "WAITING_PARTS", "UNDER_REPAIR"].includes(m.maintenance_status) ? m.maintenance_status : "OK", maintenanceNote: m.maintenance_note ?? null, missingParts: Array.isArray(m.missing_parts) ? m.missing_parts : [], receivedAt: m.received_at ?? null, createdAt: iso(m.created_at), updatedAt: iso(m.updated_at) })) as VenueMachine[],
     buffers: (buffers.data ?? []).map((b) => ({ id: b.id, name: b.name, destinationVenueId: b.destination_venue_id, createdAt: iso(b.created_at), updatedAt: iso(b.updated_at) })) as TransferBuffer[],
     items: (items.data ?? []).map((i) => ({ id: i.id, transferBufferId: i.transfer_buffer_id, venueMachineId: i.venue_machine_id, sourceVenueId: i.source_venue_id, addedAt: iso(i.added_at), order: i.item_order })) as TransferBufferItem[]
