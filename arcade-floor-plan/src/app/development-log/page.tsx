@@ -5,6 +5,7 @@ import { ThemeControl } from "../../components/theme/ThemeControl";
 type LogEntry = { date: string; commit: string; kind: "Feature" | "Fix" | "Platform" | "Design"; title: string; summary: string };
 
 const entries: LogEntry[] = [
+  { date: "23 Sep 2026", commit: "release", kind: "Fix", title: "Versioned catalog image replacement", summary: "Replacing a machine image now writes a new versioned Storage object and removes the previous object, preventing browser or CDN caching from restoring the old image after refresh." },
   { date: "23 Sep 2026", commit: "release", kind: "Fix", title: "Catalog image deletion authority", summary: "A deliberately cleared machine image now stays empty after refresh. Cloud hydration no longer falls back to stale Storage files, and replacement/removal cleans only that model's known image objects." },
   { date: "21 Sep 2026", commit: "release", kind: "Fix", title: "Visual Panel subject framing", summary: "Visual machine cards now trim transparent or white source margins before rendering, then use a taller adaptive viewport so the complete machine remains visible while the subject fills the card more clearly." },
   { date: "21 Sep 2026", commit: "release", kind: "Fix", title: "Resilient shipment image upload", summary: "Shipment creation now shows bounded Preparing, Uploading image and Creating shipment stages, retries only transient Storage failures, and offers Retry, Continue without image or Cancel instead of leaving the modal frozen." },

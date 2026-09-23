@@ -37,10 +37,24 @@ const uploadDataUrl = async (bucket: "machine-images" | "floor-plans", path: str
 
 const catalogImagePaths = (id: string) => ["png", "jpg", "jpeg", "webp"].map((extension) => `catalog/${id}.${extension}`);
 
-const removeCatalogImages = async (id: string, keepExtension?: string) => {
-  const paths = catalogImagePaths(id).filter((path) => !keepExtension || !path.endsWith(`.${keepExtension}`));
-  if (!paths.length) return;
-  const { error } = await clientOrThrow().storage.from("machine-images").remove(paths);
+/** Extract a bucket-relative path from a Supabase public object URL. */
+const catalogPathFromUrl = (url: unknown) => {
+  if (typeof url !== "string" || !url) return null;
+  const marker = "/storage/v1/object/public/machine-images/";
+  const index = url.indexOf(marker);
+  return index < 0 ? null : decodeURIComponent(url.slice(index + marker.length).split(/[?#]/, 1)[0]);
+};
+
+const versionedCatalogImagePath = (id: string, extension: string) =>
+  `catalog/${id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
+
+const removeCatalogImages = async (id: string, previousUrl?: unknown, keepPath?: string) => {
+  const paths = [...catalogImagePaths(id), catalogPathFromUrl(previousUrl)].filter(
+    (path): path is string => Boolean(path) && path !== keepPath,
+  );
+  const uniquePaths = [...new Set(paths)];
+  if (!uniquePaths.length) return;
+  const { error } = await clientOrThrow().storage.from("machine-images").remove(uniquePaths);
   if (error) throw error;
 };
 
@@ -122,8 +136,16 @@ export type CatalogMachinePatch = Partial<Pick<Machine, "name" | "category" | "i
 
 /** Field-level catalog update. Unspecified fields are never included in the request. */
 export async function patchCatalogMachine(id: string, patch: CatalogMachinePatch) {
+  const client = clientOrThrow();
   const row: Record<string, unknown> = { updated_at: timestamp() };
   let uploadedExtension: string | undefined;
+  let uploadedPath: string | undefined;
+  let previousImageUrl: string | null = null;
+  if (patch.imageUrl !== undefined) {
+    const current = await client.from("catalog_machines").select("image_url").eq("id", id).maybeSingle();
+    if (current.error) throw current.error;
+    previousImageUrl = current.data?.image_url ?? null;
+  }
   if (patch.name !== undefined) row.name = patch.name;
   if (patch.category !== undefined) row.category = patch.category;
   if (patch.widthMm !== undefined) row.width_mm = patch.widthMm;
@@ -137,7 +159,8 @@ export async function patchCatalogMachine(id: string, patch: CatalogMachinePatch
     if (patch.imageUrl?.startsWith("data:")) {
       const mime = patch.imageUrl.match(/^data:([^;,]+)/)?.[1] ?? "image/png";
       uploadedExtension = mime.split("/")[1] || "png";
-      row.image_url = await uploadDataUrl("machine-images", `catalog/${id}.${uploadedExtension}`, patch.imageUrl);
+      uploadedPath = versionedCatalogImagePath(id, uploadedExtension);
+      row.image_url = await uploadDataUrl("machine-images", uploadedPath, patch.imageUrl);
     } else row.image_url = patch.imageUrl;
   }
   const { error } = await clientOrThrow().from("catalog_machines").update(row).eq("id", id);
@@ -145,7 +168,7 @@ export async function patchCatalogMachine(id: string, patch: CatalogMachinePatch
   // A removed/replaced image must not remain discoverable in Storage. The
   // cloud row above is authoritative, and cleanup is limited to this model's
   // known object paths.
-  if (patch.imageUrl !== undefined) await removeCatalogImages(id, uploadedExtension);
+  if (patch.imageUrl !== undefined) await removeCatalogImages(id, previousImageUrl, uploadedPath);
   return typeof row.image_url === "string" ? row.image_url : patch.imageUrl;
 }
 

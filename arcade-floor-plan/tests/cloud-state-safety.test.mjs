@@ -111,6 +111,7 @@ test("catalog image removal is authoritative and cannot resurrect old Storage fi
   ]);
   assert.match(persistence, /imageUrl: m\.image_url \?\? null/);
   assert.doesNotMatch(persistence, /imageByMachineId/);
-  assert.match(mutations, /removeCatalogImages\(id, uploadedExtension\)/);
+  assert.match(mutations, /removeCatalogImages\(id, previousImageUrl, uploadedPath\)/);
+  assert.match(mutations, /versionedCatalogImagePath/);
   assert.match(mutations, /catalogImagePaths/);
 });
