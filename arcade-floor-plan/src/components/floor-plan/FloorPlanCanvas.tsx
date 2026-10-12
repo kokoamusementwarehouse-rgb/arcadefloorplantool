@@ -16,6 +16,7 @@ import { exportFloorPlanPng } from "../../lib/floor-plan/export";
 import { getSupabaseClient } from "../../lib/supabase/client";
 import { calculateFitRenderZoom, FIT_VIEW_ZOOM, MAX_VIEW_ZOOM, MIN_VIEW_ZOOM, viewZoomToRenderZoom } from "../../lib/floor-plan/zoom";
 import { useShallow } from "zustand/react/shallow";
+import { bindCanvasGestures } from "../../lib/floor-plan/gestures";
 
 const padding = 42;
 export function FloorPlanCanvas() {
@@ -44,14 +45,33 @@ export function FloorPlanCanvas() {
   const [image] = useImage(floorPlanSource);
   const fitRenderZoom = useMemo(() => calculateFitRenderZoom({ imageWidthPx: floorPlan.imageWidthPx, imageHeightPx: floorPlan.imageHeightPx, viewportWidth: viewport.width, viewportHeight: viewport.height, padding }), [floorPlan.imageHeightPx, floorPlan.imageWidthPx, viewport.height, viewport.width]);
   const renderZoom = viewZoomToRenderZoom(zoom, fitRenderZoom);
-  const latestViewRef = useRef({ floorPlan, floorOffset, viewport, renderZoom, pan, venueMachineById, machineById, layoutByVenueMachineId });
-  latestViewRef.current = { floorPlan, floorOffset, viewport, renderZoom, pan, venueMachineById, machineById, layoutByVenueMachineId };
+  const latestViewRef = useRef({ floorPlan, floorOffset, viewport, renderZoom, fitRenderZoom, pan, venueMachineById, machineById, layoutByVenueMachineId });
+  latestViewRef.current = { floorPlan, floorOffset, viewport, renderZoom, fitRenderZoom, pan, venueMachineById, machineById, layoutByVenueMachineId };
   const fitPlan = useCallback(() => {
     if (!floorPlan.imageWidthPx || !floorPlan.imageHeightPx) return;
     setZoom(FIT_VIEW_ZOOM); setPan({ x: (viewport.width - floorPlan.imageWidthPx * fitRenderZoom) / 2 - floorOffset.x * fitRenderZoom, y: (viewport.height - floorPlan.imageHeightPx * fitRenderZoom) / 2 - floorOffset.y * fitRenderZoom });
   }, [fitRenderZoom, floorOffset.x, floorOffset.y, floorPlan.imageHeightPx, floorPlan.imageWidthPx, setPan, setZoom, viewport.height, viewport.width]);
 
   useEffect(() => { const observer = new ResizeObserver(([entry]) => { setViewport({ width: Math.floor(entry.contentRect.width), height: Math.floor(entry.contentRect.height) }); notifyConnectionLayout(); }); if (hostRef.current) observer.observe(hostRef.current); return () => observer.disconnect(); }, []);
+  useEffect(() => {
+    const content = hostRef.current?.querySelector<HTMLElement>(".konvajs-content");
+    if (!content) return;
+    return bindCanvasGestures(content, {
+      limits: { min: MIN_VIEW_ZOOM, max: MAX_VIEW_ZOOM },
+      read: () => {
+        const state = useFloorPlanStore.getState();
+        const current = latestViewRef.current;
+        return { zoom: state.zoom, pan: state.pan, viewport: current.viewport, identity: state.floorPlan, basis: current.fitRenderZoom,
+          enabled: Boolean(state.floorPlan.imageDataUrl || state.floorPlan.imageUrl) && state.floorPlan.imageWidthPx > 0 && state.floorPlan.imageHeightPx > 0 && !state.draggingVenueMachineId && !dragStart.current };
+      },
+      apply: (view) => {
+        // Navigation/UI state only: a gesture never changes physical machine
+        // positions, background offsets, calibration or cloud records.
+        useFloorPlanStore.setState({ zoom: view.zoom, pan: view.pan });
+        notifyConnectionLayout();
+      },
+    });
+  }, []);
   useEffect(() => { const handler = () => fitPlan(); window.addEventListener("floorplan:fit", handler); return () => window.removeEventListener("floorplan:fit", handler); }, [fitPlan]);
   useEffect(() => { const handler = (event: Event) => { const current = latestViewRef.current; const nextZoom = Number((event as CustomEvent<number>).detail); if (!Number.isFinite(nextZoom) || !current.floorPlan.imageWidthPx || !current.floorPlan.imageHeightPx) return; const clamped = Math.max(MIN_VIEW_ZOOM, Math.min(MAX_VIEW_ZOOM, nextZoom)); const nextRenderZoom = viewZoomToRenderZoom(clamped, fitRenderZoom); const mapCenter = { x: current.floorPlan.imageWidthPx / 2, y: current.floorPlan.imageHeightPx / 2 }; setPan({ x: current.pan.x + (current.floorOffset.x + mapCenter.x) * (current.renderZoom - nextRenderZoom), y: current.pan.y + (current.floorOffset.y + mapCenter.y) * (current.renderZoom - nextRenderZoom) }); setZoom(clamped); }; window.addEventListener("floorplan:zoom-centered", handler); return () => window.removeEventListener("floorplan:zoom-centered", handler); }, [fitRenderZoom, setPan, setZoom]);
   useEffect(() => { if (!floorPlanSource) { fittedViewRef.current = null; return; } if (!image) return; const key = `${venue.id}:${floorPlanSource}:${viewport.width}x${viewport.height}`; if (fittedViewRef.current === key) return; fittedViewRef.current = key; fitPlan(); }, [fitPlan, floorPlanSource, image, venue.id, viewport.height, viewport.width]);
@@ -130,7 +150,7 @@ export function FloorPlanCanvas() {
   const contextVenueMachine = contextMenu ? venueMachineById.get(contextMenu.id) : undefined;
   const contextMachine = contextVenueMachine ? machineById.get(contextVenueMachine.machineId) : undefined;
   const contextLayout = contextMenu ? layoutByVenueMachineId.get(contextMenu.id) : undefined;
-  return <section className="canvas-shell" ref={hostRef} aria-label="Floor plan workspace" data-render-zoom={renderZoom} onDragOver={(event) => event.preventDefault()} onDrop={dropMachine}><input id="floor-plan-upload" className="hidden-upload" type="file" accept="image/png,image/jpeg,image/webp" onChange={upload} />
+  return <section className="canvas-shell" ref={hostRef} aria-label="Floor plan workspace" aria-description="Pinch to zoom. Scroll with two fingers to pan. Drag machines to move them." data-render-zoom={renderZoom} onDragOver={(event) => event.preventDefault()} onDrop={dropMachine}><input id="floor-plan-upload" className="hidden-upload" type="file" accept="image/png,image/jpeg,image/webp" onChange={upload} />
     <Stage width={viewport.width} height={viewport.height} onMouseDown={onPointerDown} onMouseMove={onPointerMove} onMouseUp={() => { dragStart.current = null; }} className={activeTool === "pan" ? "stage--panning" : ""}>
       <Layer><Rect width={viewport.width} height={viewport.height} fill="transparent" /></Layer>
       <Layer><Group x={pan.x + floorOffset.x * renderZoom} y={pan.y + floorOffset.y * renderZoom} scaleX={renderZoom} scaleY={renderZoom} draggable={backgroundEditing} onDragEnd={(event) => { if (event.target !== event.currentTarget) return; patchFloorPlan({ backgroundOffsetX: (event.target.x() - pan.x) / renderZoom, backgroundOffsetY: (event.target.y() - pan.y) / renderZoom }); notifyConnectionLayout(); }}>{image ? <KonvaImage image={image} width={floorPlan.imageWidthPx} height={floorPlan.imageHeightPx} listening={backgroundEditing} /> : null}{floorPlan.scaleMmPerPx ? layoutMachines.map((layoutMachine) => { const venueMachine = venueMachineById.get(layoutMachine.venueMachineId); const machine = venueMachine && machineById.get(venueMachine.machineId); return venueMachine && machine ? <MachineObject key={layoutMachine.id} layoutMachine={layoutMachine} venueMachine={venueMachine} machine={machine} scaleMmPerPx={floorPlan.scaleMmPerPx!} floorPlanWidthPx={floorPlan.imageWidthPx} floorPlanHeightPx={floorPlan.imageHeightPx} zoom={renderZoom} selected={selectedMachineId === venueMachine.id} hovered={hoveredVenueMachineId === venueMachine.id} dragging={draggingVenueMachineId === venueMachine.id} draggable={activeTool === "select" && !backgroundEditing} onSelect={handleSelectMachine} onContextMenu={handleMachineContextMenu} onDropToBuffer={handleDropToBuffer} onHover={handleMachineHover} onDragStart={handleMachineDragStart} onDragEnd={handleMachineDragEnd} onMove={handleMachineMove} onLiveMove={handleMachineLiveMove} /> : null; }) : null}</Group></Layer>

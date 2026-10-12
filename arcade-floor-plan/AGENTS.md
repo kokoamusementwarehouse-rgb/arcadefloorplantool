@@ -11,6 +11,7 @@ When implementing from a selected generated mock, treat that image as the source
 - Use Next.js, React, TypeScript, Tailwind CSS, react-konva, and Zustand.
 - Phase 0 ends at the visual editor shell; no upload, placement, scale calibration, connection, export, or persistence behavior.
 - In the editor, the left panel is **Venue Machines**. It shows assigned physical machines, not the company-wide catalog.
+- In Floor Plans, trackpad pinch zooms at the gesture location and two-finger scrolling pans without selecting the Hand tool. Keep mouse dragging and toolbar controls available; gestures change view state only.
 
 Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts/prepare-sites-build.mjs`, and `tests/sites-worker.test.mjs` intact so the same local prototype can be handed to Sites. Before a Sites handoff, run `npm run build` and `npm run test:sites`; the build must leave `dist/client/index.html`, `dist/server/index.js`, and `dist/.openai/hosting.json`.
 
