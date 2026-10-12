@@ -15,9 +15,14 @@ import { AuthBoundary } from "../auth/AuthBoundary";
 import { ProductNavigation } from "../navigation/ProductNavigation";
 import { ThemeControl } from "../theme/ThemeControl";
 import { isSupabaseConfigured } from "../../lib/supabase/client";
+import { useShallow } from "zustand/react/shallow";
 
 export function FloorPlanEditor() {
-  const { venue, layout, floorPlan, fullStoreView, setFullStoreView, layoutMachines, projects, hasHydrated, setVenue, persistenceStatus, lastSavedAt } = useFloorPlanStore();
+  const { venue, layout, floorPlan, fullStoreView, setFullStoreView, layoutMachines, projects, hasHydrated, setVenue, persistenceStatus, lastSavedAt } = useFloorPlanStore(useShallow((state) => ({
+    venue: state.venue, layout: state.layout, floorPlan: state.floorPlan, fullStoreView: state.fullStoreView, setFullStoreView: state.setFullStoreView,
+    layoutMachines: state.layoutMachines, projects: state.projects, hasHydrated: state.hasHydrated, setVenue: state.setVenue,
+    persistenceStatus: state.persistenceStatus, lastSavedAt: state.lastSavedAt,
+  })));
   const editorRef = useRef<HTMLDivElement>(null); const [showAllConnections, setShowAllConnections] = useState(false); const [panelsHidden, setPanelsHidden] = useState(false); const restoredVenue = useRef(false);
   useEffect(() => { const toggle = () => setPanelsHidden((value) => !value); window.addEventListener("floorplan:toggle-panels", toggle); return () => window.removeEventListener("floorplan:toggle-panels", toggle); }, []);
   /**

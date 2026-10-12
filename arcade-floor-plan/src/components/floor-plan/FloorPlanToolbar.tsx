@@ -1,9 +1,13 @@
 import { ArrowUDownLeft, ArrowUUpLeft, ArrowsOutSimple, CursorClick, Hand, ImageSquare, MagnifyingGlassMinus, MagnifyingGlassPlus, Ruler, SidebarSimple, Trash, UploadSimple } from "@phosphor-icons/react";
 import { MAX_VIEW_ZOOM, MIN_VIEW_ZOOM } from "../../lib/floor-plan/zoom";
 import { useFloorPlanStore } from "../../store/floorPlanStore";
+import { useShallow } from "zustand/react/shallow";
 
 export function FloorPlanToolbar() {
-  const { zoom, setZoom, activeTool, setActiveTool, backgroundEditing, setBackgroundEditing, undoLayout, redoLayout, historyIndex, layoutHistory, floorPlan, layoutMachines, deleteFloorPlan } = useFloorPlanStore();
+  const { zoom, setZoom, activeTool, setActiveTool, backgroundEditing, setBackgroundEditing, undoLayout, redoLayout, historyIndex, layoutHistory, floorPlan, layoutMachines, deleteFloorPlan } = useFloorPlanStore(useShallow((state) => ({
+    zoom: state.zoom, setZoom: state.setZoom, activeTool: state.activeTool, setActiveTool: state.setActiveTool, backgroundEditing: state.backgroundEditing, setBackgroundEditing: state.setBackgroundEditing,
+    undoLayout: state.undoLayout, redoLayout: state.redoLayout, historyIndex: state.historyIndex, layoutHistory: state.layoutHistory, floorPlan: state.floorPlan, layoutMachines: state.layoutMachines, deleteFloorPlan: state.deleteFloorPlan,
+  })));
   const hasFloorPlan = Boolean(floorPlan.imageDataUrl || floorPlan.imageUrl);
   return <div className="toolbar" aria-label="Canvas tools">
     <button className="tool-button" aria-label="Toggle panels" title="Show or hide side panels" onClick={() => window.dispatchEvent(new Event("floorplan:toggle-panels"))}><SidebarSimple size={16} /></button><span className="tool-divider" />

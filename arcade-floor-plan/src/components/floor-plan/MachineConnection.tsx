@@ -1,16 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CONNECTION_LAYOUT_EVENT, nearestEdgeAnchors } from "../../lib/floor-plan/connection";
 import { footprintScreenBounds } from "../../lib/floor-plan/navigation";
 import { getEffectiveMachineDimensions } from "../../lib/floor-plan/machineDimensions";
 import { useFloorPlanStore } from "../../store/floorPlanStore";
+import { useShallow } from "zustand/react/shallow";
 
 type Segment = { id: string; x1: number; y1: number; x2: number; y2: number; selected: boolean; hovered: boolean };
 
 export function MachineConnection({ rootRef, showAll }: { rootRef: React.RefObject<HTMLDivElement | null>; showAll: boolean }) {
-  const store = useFloorPlanStore(); const [segments, setSegments] = useState<Segment[]>([]); const [overlaySize, setOverlaySize] = useState({ width: 1, height: 1 }); const frame = useRef<number | null>(null); const live = useRef<{ venueMachineId: string; xMm: number; yMm: number } | null>(null);
+  const store = useFloorPlanStore(useShallow((state) => ({ floorPlan: state.floorPlan, zoom: state.zoom, layoutMachines: state.layoutMachines, selectedMachineId: state.selectedMachineId, hoveredVenueMachineId: state.hoveredVenueMachineId, draggingVenueMachineId: state.draggingVenueMachineId, pan: state.pan, venueMachines: state.venueMachines, machines: state.machines })));
+  const layoutByVenueMachineId = useMemo(() => new Map(store.layoutMachines.map((item) => [item.venueMachineId, item])), [store.layoutMachines]);
+  const venueMachineById = useMemo(() => new Map(store.venueMachines.map((item) => [item.id, item])), [store.venueMachines]);
+  const machineById = useMemo(() => new Map(store.machines.map((item) => [item.id, item])), [store.machines]);
+  const [segments, setSegments] = useState<Segment[]>([]); const [overlaySize, setOverlaySize] = useState({ width: 1, height: 1 }); const frame = useRef<number | null>(null); const live = useRef<{ venueMachineId: string; xMm: number; yMm: number } | null>(null);
   const calculate = useCallback(() => {
+    const ids = showAll ? store.layoutMachines.map((item) => item.venueMachineId) : [...new Set([store.selectedMachineId, store.hoveredVenueMachineId, store.draggingVenueMachineId].filter(Boolean) as string[])];
+    if (!ids.length) { setSegments((current) => current.length ? [] : current); return; }
     const root = rootRef.current; const canvas = root?.querySelector<HTMLElement>(".canvas-shell"); const visualViewport = root?.querySelector<HTMLElement>("[data-testid='machine-visual-viewport']");
     if (!root || !canvas || !store.floorPlan.scaleMmPerPx) { setSegments([]); return; }
     const rootRect = root.getBoundingClientRect(); const canvasRect = canvas.getBoundingClientRect(); const viewportRect = visualViewport?.getBoundingClientRect(); setOverlaySize((current) => current.width === rootRect.width && current.height === rootRect.height ? current : { width: rootRect.width, height: rootRect.height });
@@ -18,9 +25,8 @@ export function MachineConnection({ rootRef, showAll }: { rootRef: React.RefObje
     // Konva stage renders at its fitted pixel scale, so the overlay must use
     // the exact scale that the canvas used rather than the display value.
     const renderZoom = Number(canvas.dataset.renderZoom) || store.zoom;
-    const ids = showAll ? store.layoutMachines.map((item) => item.venueMachineId) : [...new Set([store.selectedMachineId, store.hoveredVenueMachineId, store.draggingVenueMachineId].filter(Boolean) as string[])];
     const next = ids.flatMap((id): Segment[] => {
-      const card = root.querySelector<HTMLElement>(`[data-venue-machine-id="${CSS.escape(id)}"]`); const layout = store.layoutMachines.find((item) => item.venueMachineId === id); const vm = store.venueMachines.find((item) => item.id === id); const machine = vm && store.machines.find((item) => item.id === vm.machineId);
+      const card = root.querySelector<HTMLElement>(`[data-venue-machine-id="${CSS.escape(id)}"]`); const layout = layoutByVenueMachineId.get(id); const vm = venueMachineById.get(id); const machine = vm && machineById.get(vm.machineId);
       if (!card || !layout || !vm || !machine) return [];
       const cardRect = card.getBoundingClientRect();
       if (viewportRect && (cardRect.bottom < viewportRect.top || cardRect.top > viewportRect.bottom)) return [];
@@ -31,14 +37,25 @@ export function MachineConnection({ rootRef, showAll }: { rootRef: React.RefObje
       return [{ id, x1: anchors.from.x - rootRect.left, y1: anchors.from.y - rootRect.top, x2: anchors.to.x - rootRect.left, y2: anchors.to.y - rootRect.top, selected: id === store.selectedMachineId, hovered: id === store.hoveredVenueMachineId || id === store.draggingVenueMachineId }];
     });
     setSegments(next);
-  }, [rootRef, showAll, store.draggingVenueMachineId, store.floorPlan, store.hoveredVenueMachineId, store.layoutMachines, store.machines, store.pan, store.selectedMachineId, store.venueMachines, store.zoom]);
-  const schedule = useCallback(() => { if (frame.current !== null) return; frame.current = requestAnimationFrame(() => { frame.current = null; calculate(); }); }, [calculate]);
-  useEffect(() => { schedule(); }, [schedule]);
+  }, [rootRef, showAll, store.draggingVenueMachineId, store.floorPlan, store.hoveredVenueMachineId, store.layoutMachines, store.pan, store.selectedMachineId, store.zoom, layoutByVenueMachineId, machineById, venueMachineById]);
+  const calculateRef = useRef(calculate);
+  calculateRef.current = calculate;
+  const schedule = useCallback(() => { if (frame.current !== null) return; frame.current = requestAnimationFrame(() => { frame.current = null; calculateRef.current(); }); }, []);
+  useEffect(() => { schedule(); }, [calculate, schedule]);
   useEffect(() => {
     const root = rootRef.current; if (!root) return;
     const onLayout = (event: Event) => { live.current = (event as CustomEvent<typeof live.current>).detail ?? null; schedule(); };
-    const observer = new ResizeObserver(schedule); observer.observe(root); root.querySelectorAll(".canvas-shell,.details-panel,.visual-card").forEach((node) => observer.observe(node));
-    const mutations = new MutationObserver(schedule); const panel = root.querySelector(".details-panel"); if (panel) mutations.observe(panel, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+    // Keep observers attached while panning. Reconcile targets only when cards
+    // mount/unmount (tab/venue changes), not on every pointer or hover update.
+    const observer = new ResizeObserver(schedule);
+    const observed = new Set<Element>();
+    const syncTargets = () => {
+      const targets = new Set<Element>([root, ...root.querySelectorAll(".canvas-shell,.details-panel,.visual-card")]);
+      for (const node of observed) if (!targets.has(node)) { observer.unobserve(node); observed.delete(node); }
+      for (const node of targets) if (!observed.has(node)) { observer.observe(node); observed.add(node); }
+    };
+    syncTargets();
+    const mutations = new MutationObserver((records) => { if (records.some((record) => record.type === "childList")) syncTargets(); schedule(); }); const panel = root.querySelector(".details-panel"); if (panel) mutations.observe(panel, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
     root.addEventListener("scroll", schedule, true); window.addEventListener("resize", schedule); window.addEventListener(CONNECTION_LAYOUT_EVENT, onLayout);
     return () => { observer.disconnect(); mutations.disconnect(); root.removeEventListener("scroll", schedule, true); window.removeEventListener("resize", schedule); window.removeEventListener(CONNECTION_LAYOUT_EVENT, onLayout); if (frame.current !== null) { cancelAnimationFrame(frame.current); frame.current = null; } };
   }, [rootRef, schedule]);
