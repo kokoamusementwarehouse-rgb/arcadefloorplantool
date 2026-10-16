@@ -90,3 +90,22 @@ nav a{display:flex;align-items:center;color:#68759a;text-decoration:none;font-si
 .allocate-list input[type=checkbox]{width:18px;height:18px;min-height:18px;padding:0;flex:0 0 18px;accent-color:#5149ed}
 html[data-theme="dark"] .asset-modal footer .asset-primary{background:#5149ed;color:#fff}
 html[data-theme="dark"] .asset-modal footer .asset-primary:disabled{background:#7773a8;color:#fff}
+
+/* Keep the venue directory usable while its surrounding workspace stays fixed. */
+.editor-body{grid-template-rows:minmax(0,1fr)}
+.project-panel{min-height:0;overflow:hidden}
+.project-top,.project-title,.transfer-section,.project-library{flex-shrink:0}
+.project-list{flex:1 1 0%;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:#c7cfe0 transparent}
+.project-list::-webkit-scrollbar{width:6px}
+.project-list::-webkit-scrollbar-thumb{background:#c7cfe0;border-radius:6px}
+.venue-section{flex:0 0 auto}
+.project-row{position:relative;transition:opacity .12s ease}
+.project-drag-handle{display:grid;place-items:center;flex:0 0 14px;width:14px;height:25px;margin-left:2px;padding:0;border:0;border-radius:4px;background:transparent;color:#a5afc4;cursor:grab;touch-action:none;user-select:none}
+.project-drag-handle:hover{background:#ebeaff;color:#5149ed}
+.project-drag-handle:focus-visible{outline:2px solid #746bff;outline-offset:1px;color:#5149ed}
+.project-drag-handle:active{cursor:grabbing}
+.project-panel--collapsed .project-drag-handle{display:none}
+.project-row--dragging{opacity:.42;cursor:grabbing}
+.project-row--drop-before::before,.project-row--drop-after::after{content:"";position:absolute;z-index:2;left:5px;right:5px;height:2px;border-radius:2px;background:#5149ed;pointer-events:none}
+.project-row--drop-before::before{top:-2px}
+.project-row--drop-after::after{bottom:-2px}
