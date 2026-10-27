@@ -109,3 +109,33 @@ html[data-theme="dark"] .asset-modal footer .asset-primary:disabled{background:#
 .project-row--drop-before::before,.project-row--drop-after::after{content:"";position:absolute;z-index:2;left:5px;right:5px;height:2px;border-radius:2px;background:#5149ed;pointer-events:none}
 .project-row--drop-before::before{top:-2px}
 .project-row--drop-after::after{bottom:-2px}
+
+.shipment-board-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:14px}
+.shipment-board-tab{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0;padding:10px 12px;border:1px solid #e0e5f1;border-radius:8px;background:#fff;color:#34466f;text-align:left;cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s}
+.shipment-board-tab:hover{border-color:#b8b4ff}
+.shipment-board-tab--active{border-color:#8b84ff;background:#f7f6ff;box-shadow:0 2px 8px #5049ed12}
+.shipment-board-tab>span{display:block;min-width:0}
+.shipment-board-tab b,.shipment-board-tab small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shipment-board-tab b{font-size:11px}
+.shipment-board-tab small{margin-top:3px;color:#8390aa;font-size:9px}
+.shipment-board-tab em{display:grid;place-items:center;flex:0 0 25px;height:25px;border-radius:50%;background:#f0efff;color:#5149ed;font-size:10px;font-style:normal;font-weight:800}
+.shipment-card-badges{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:5px;max-width:180px}
+.shipment-stage-pill{height:max-content;border-radius:12px;padding:5px 8px;font-size:9px;font-weight:750;white-space:nowrap}
+.shipment-stage-pill--in_shipping{background:#eeedff;color:#5149ed}
+.shipment-stage-pill--arrived{background:#fff3dc;color:#93651f}
+.shipment-stage-pill--located{background:#e7f7ef;color:#287b5a}
+.shipment-unit-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px;margin:12px 0;padding:0;list-style:none}
+.shipment-unit-list li{display:grid;grid-template-columns:56px minmax(0,1fr);align-items:baseline;gap:2px 7px;padding:7px 9px;border:1px solid #edf0f6;border-radius:6px;background:#f9faff}
+.shipment-unit-list b{grid-row:span 2;color:#5149ed;font-size:10px}
+.shipment-unit-list span{overflow:hidden;color:#34466f;font-size:10px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
+.shipment-unit-list small{overflow:hidden;color:#8390aa;font-size:9px;text-overflow:ellipsis;white-space:nowrap}
+html[data-theme="dark"] .shipment-board-tab{border-color:var(--border);background:var(--surface);color:var(--text-primary)}
+html[data-theme="dark"] .shipment-board-tab--active{background:var(--surface-elevated);border-color:#726cff}
+html[data-theme="dark"] .shipment-board-tab small,html[data-theme="dark"] .shipment-unit-list small{color:var(--muted)}
+html[data-theme="dark"] .shipment-board-tab em{background:#302d5c;color:#c0bcff}
+html[data-theme="dark"] .shipment-stage-pill--in_shipping{background:#302d5c;color:#c0bcff}
+html[data-theme="dark"] .shipment-stage-pill--arrived{background:#4a3920;color:#f3ce82}
+html[data-theme="dark"] .shipment-stage-pill--located{background:#173b30;color:#8fe0ba}
+html[data-theme="dark"] .shipment-unit-list li{border-color:var(--border);background:var(--surface-subtle)}
+html[data-theme="dark"] .shipment-unit-list span{color:var(--text-primary)}
+@media(max-width:760px){.shipment-board-tabs{grid-template-columns:1fr}.shipment-card-badges{max-width:130px}.shipment-unit-list{grid-template-columns:1fr}}
