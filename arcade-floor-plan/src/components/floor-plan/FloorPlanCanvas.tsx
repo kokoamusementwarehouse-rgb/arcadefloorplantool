@@ -19,6 +19,7 @@ import { calculateFitRenderZoom, FIT_VIEW_ZOOM, MAX_VIEW_ZOOM, MIN_VIEW_ZOOM, vi
 import { useShallow } from "zustand/react/shallow";
 import { bindCanvasGestures } from "../../lib/floor-plan/gestures";
 import { isFootprintNearViewport } from "../../lib/floor-plan/visibility";
+import { machineTextCacheRatio } from "../../lib/floor-plan/textCache";
 
 const padding = 42;
 export function FloorPlanCanvas() {
@@ -49,6 +50,8 @@ export function FloorPlanCanvas() {
   const [image] = useImage(floorPlanSource);
   const fitRenderZoom = useMemo(() => calculateFitRenderZoom({ imageWidthPx: floorPlan.imageWidthPx, imageHeightPx: floorPlan.imageHeightPx, viewportWidth: viewport.width, viewportHeight: viewport.height, padding }), [floorPlan.imageHeightPx, floorPlan.imageWidthPx, viewport.height, viewport.width]);
   const renderZoom = viewZoomToRenderZoom(zoom, fitRenderZoom);
+  const pixelRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+  const textCacheRatio = machineTextCacheRatio(renderZoom, pixelRatio);
   const latestViewRef = useRef({ floorPlan, floorOffset, viewport, renderZoom, fitRenderZoom, pan, venueMachineById, machineById, layoutByVenueMachineId });
   latestViewRef.current = { floorPlan, floorOffset, viewport, renderZoom, fitRenderZoom, pan, venueMachineById, machineById, layoutByVenueMachineId };
   const fitPlan = useCallback(() => {
@@ -164,7 +167,7 @@ export function FloorPlanCanvas() {
         const dimensions = getEffectiveMachineDimensions(machine, venueMachine);
         const bounds = footprintScreenBounds({ ...layoutMachine, ...dimensions, scaleMmPerPx: floorPlan.scaleMmPerPx!, zoom: renderZoom, pan, floorOffset });
         const visible = backgroundEditing || selected || hovered || dragging || isFootprintNearViewport(bounds, viewport);
-        return <MachineObject key={layoutMachine.id} layoutMachine={layoutMachine} venueMachine={venueMachine} machine={machine} scaleMmPerPx={floorPlan.scaleMmPerPx!} floorPlanWidthPx={floorPlan.imageWidthPx} floorPlanHeightPx={floorPlan.imageHeightPx} zoom={renderZoom} visible={visible} selected={selected} hovered={hovered} dragging={dragging} draggable={activeTool === "select" && !backgroundEditing} dragGroupRef={dragGroupRef} onSelect={handleSelectMachine} onContextMenu={handleMachineContextMenu} onDropToBuffer={handleDropToBuffer} onHover={handleMachineHover} onDragStart={handleMachineDragStart} onDragEnd={handleMachineDragEnd} onMove={handleMachineMove} onLiveMove={handleMachineLiveMove} />;
+        return <MachineObject key={layoutMachine.id} layoutMachine={layoutMachine} venueMachine={venueMachine} machine={machine} scaleMmPerPx={floorPlan.scaleMmPerPx!} floorPlanWidthPx={floorPlan.imageWidthPx} floorPlanHeightPx={floorPlan.imageHeightPx} zoom={renderZoom} textCacheRatio={textCacheRatio} visible={visible} selected={selected} hovered={hovered} dragging={dragging} draggable={activeTool === "select" && !backgroundEditing} dragGroupRef={dragGroupRef} onSelect={handleSelectMachine} onContextMenu={handleMachineContextMenu} onDropToBuffer={handleDropToBuffer} onHover={handleMachineHover} onDragStart={handleMachineDragStart} onDragEnd={handleMachineDragEnd} onMove={handleMachineMove} onLiveMove={handleMachineLiveMove} />;
       }) : null}</Group></Layer>
       <Layer listening={!backgroundEditing}><Group ref={dragGroupRef} x={pan.x + floorOffset.x * renderZoom} y={pan.y + floorOffset.y * renderZoom} scaleX={renderZoom} scaleY={renderZoom} /></Layer>
       <Layer listening={activeTool === "calibrate"}><Group x={pan.x + floorOffset.x * renderZoom} y={pan.y + floorOffset.y * renderZoom} scaleX={renderZoom} scaleY={renderZoom}>{line.length ? <Line points={line} stroke="#554cf0" strokeWidth={2 / renderZoom} dash={[8 / renderZoom, 6 / renderZoom]} /> : null}{calibrationPoints.map((point, index) => <Group key={`${point.x}-${point.y}`}><Circle x={point.x} y={point.y} radius={7 / renderZoom} fill="#554cf0" stroke="#fff" strokeWidth={2 / renderZoom} /><Text x={point.x + 10 / renderZoom} y={point.y - 18 / renderZoom} text={index === 0 ? "A" : "B"} fill="#4139d5" fontStyle="bold" fontSize={13 / renderZoom} /></Group>)}</Group></Layer>
